@@ -27,6 +27,6 @@ convert input_path="fixtures/canvas/input.playbook":
 
 # リリースバイナリをビルドして build/ に配置する
 release:
-    cargo build --release -p playbook-cli
-    mkdir -p build
-    cp ../target/release/playbook-cli build/
+    @cargo build --release -p playbook-cli
+    @mkdir -p build
+    @cp ./target/release/playbook-cli build/

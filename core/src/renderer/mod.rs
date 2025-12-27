@@ -51,14 +51,14 @@ impl Renderer {
 
     fn render_move(&self, m: &MoveLine) -> String {
         format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" stroke-dasharray=\"4\" marker-end=\"url(#arrowhead)\" />",
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />",
             m.from.0, m.from.1, m.to.0, m.to.1
         )
     }
 
     fn render_pass(&self, p: &PassLine) -> String {
         format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"orange\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />",
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" stroke-dasharray=\"4\" marker-end=\"url(#arrowhead)\" />",
             p.from.0, p.from.1, p.to.0, p.to.1
         )
     }

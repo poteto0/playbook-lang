@@ -21,7 +21,7 @@ A pre-built CLI is available in the `build/` directory.
 
 ```bash
 # Convert a sample playbook to SVG
-./build/playbook-cli fixtures/canvas/input.playbook --output output.svg
+./build/playbook-cli fixtures/input.playbook --output fixtures/output.svg
 ```
 
 ### 3. Build from source
@@ -33,7 +33,7 @@ If you have [Rust](https://www.rust-lang.org/) and [just](https://github.com/cas
 just test
 
 # Convert using cargo
-just convert fixtures/canvas/input.playbook
+just convert fixtures/input.playbook
 ```
 
 ## Language Syntax
