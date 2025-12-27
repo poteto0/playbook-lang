@@ -1,7 +1,7 @@
 use clap::Parser;
+use playbook_lang_core::Renderer;
 use std::fs;
 use std::path::PathBuf;
-use playbook_lang_core::Renderer;
 
 #[derive(Parser)]
 #[command(author, version, about = "Convert playbook-lang files to SVG", long_about = None)]
@@ -28,5 +28,8 @@ fn main() {
     });
 
     fs::write(&output_path, svg).expect("Failed to write output file");
-    println!("Successfully converted {:?} to {:?}", args.input, output_path);
+    println!(
+        "Successfully converted {:?} to {:?}",
+        args.input, output_path
+    );
 }

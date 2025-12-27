@@ -17,15 +17,15 @@ pub enum Token {
     Number(f64), // Coordinates can be numbers
 
     // Symbols
-    Equals,         // =
-    LBrace,         // {
-    RBrace,         // }
-    LParenthesis,   // (
-    RParenthesis,   // )
-    Comma,          // ,
-    Arrow,          // ->
-    Colon,          // :
-    
+    Equals,       // =
+    LBrace,       // {
+    RBrace,       // }
+    LParenthesis, // (
+    RParenthesis, // )
+    Comma,        // ,
+    Arrow,        // ->
+    Colon,        // :
+
     // Special
     Comment(String),
     EOF,
@@ -93,7 +93,7 @@ impl<'a> Lexer<'a> {
         // Skip //
         self.advance();
         self.advance();
-        
+
         let start = self.pos;
         while let Some(c) = self.peek() {
             if c == '\n' {
@@ -113,34 +113,59 @@ impl<'a> Lexer<'a> {
         };
 
         match c {
-            '=' => { self.advance(); Token::Equals },
-            '{' => { self.advance(); Token::LBrace },
-            '}' => { self.advance(); Token::RBrace },
-            '(' => { self.advance(); Token::LParenthesis },
-            ')' => { self.advance(); Token::RParenthesis },
-            ',' => { self.advance(); Token::Comma },
-            ':' => { self.advance(); Token::Colon },
+            '=' => {
+                self.advance();
+                Token::Equals
+            }
+            '{' => {
+                self.advance();
+                Token::LBrace
+            }
+            '}' => {
+                self.advance();
+                Token::RBrace
+            }
+            '(' => {
+                self.advance();
+                Token::LParenthesis
+            }
+            ')' => {
+                self.advance();
+                Token::RParenthesis
+            }
+            ',' => {
+                self.advance();
+                Token::Comma
+            }
+            ':' => {
+                self.advance();
+                Token::Colon
+            }
             '-' => {
                 if self.starts_with("->") {
                     self.advance();
                     self.advance();
                     Token::Arrow
                 } else if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                     Token::Number(self.read_number())
+                    Token::Number(self.read_number())
                 } else {
-                    // For now, treat isolated '-' as part of identifier or error, but here let's assume it might be a negative number start or just skip/error. 
+                    // For now, treat isolated '-' as part of identifier or error, but here let's assume it might be a negative number start or just skip/error.
                     // Given the spec, '-' usually starts a negative number or arrow.
                     // If it's not arrow, check if next is digit.
-                     let next_char_is_digit = self.input[self.pos+1..].chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
-                     if next_char_is_digit {
-                         Token::Number(self.read_number())
-                     } else {
-                         // Fallback or error? For now let's just consume it to avoid infinite loop if unexpected
-                         self.advance();
-                         Token::Identifier("-".to_string()) 
-                     }
+                    let next_char_is_digit = self.input[self.pos + 1..]
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false);
+                    if next_char_is_digit {
+                        Token::Number(self.read_number())
+                    } else {
+                        // Fallback or error? For now let's just consume it to avoid infinite loop if unexpected
+                        self.advance();
+                        Token::Identifier("-".to_string())
+                    }
                 }
-            },
+            }
             '/' => {
                 if self.starts_with("//") {
                     Token::Comment(self.read_comment())
@@ -148,7 +173,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     Token::Identifier("/".to_string()) // Unexpected
                 }
-            },
+            }
             _ if c.is_ascii_digit() => Token::Number(self.read_number()),
             _ if c.is_alphabetic() => {
                 let ident = self.read_identifier();
@@ -165,14 +190,14 @@ impl<'a> Lexer<'a> {
                     "after" => Token::After,
                     _ => Token::Identifier(ident),
                 }
-            },
+            }
             _ => {
                 self.advance();
                 Token::Identifier(c.to_string()) // Unexpected char
             }
         }
     }
-    
+
     pub fn tokenize(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
         loop {
@@ -196,15 +221,18 @@ mod tests {
         let input = "players = { } -> :";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
-        assert_eq!(tokens, vec![
-            Token::Players,
-            Token::Equals,
-            Token::LBrace,
-            Token::RBrace,
-            Token::Arrow,
-            Token::Colon,
-            Token::EOF
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Players,
+                Token::Equals,
+                Token::LBrace,
+                Token::RBrace,
+                Token::Arrow,
+                Token::Colon,
+                Token::EOF
+            ]
+        );
     }
 
     #[test]
@@ -212,15 +240,18 @@ mod tests {
         let input = "p1 (10, -20.5)";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
-        assert_eq!(tokens, vec![
-            Token::Identifier("p1".to_string()),
-            Token::LParenthesis,
-            Token::Number(10.0),
-            Token::Comma,
-            Token::Number(-20.5),
-            Token::RParenthesis,
-            Token::EOF
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Identifier("p1".to_string()),
+                Token::LParenthesis,
+                Token::Number(10.0),
+                Token::Comma,
+                Token::Number(-20.5),
+                Token::RParenthesis,
+                Token::EOF
+            ]
+        );
     }
 
     #[test]
@@ -228,15 +259,18 @@ mod tests {
         let input = "players // this is a comment\nstate";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
-        assert_eq!(tokens, vec![
-            Token::Players,
-            Token::Comment("this is a comment".to_string()),
-            Token::State,
-            Token::EOF
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Players,
+                Token::Comment("this is a comment".to_string()),
+                Token::State,
+                Token::EOF
+            ]
+        );
     }
 
-     #[test]
+    #[test]
     fn test_full_snippet() {
         let input = r#"""
             action {

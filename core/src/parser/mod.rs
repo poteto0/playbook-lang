@@ -1,5 +1,5 @@
-use crate::lexer::Token;
 use crate::ast::*;
+use crate::lexer::Token;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -38,20 +38,26 @@ impl Parser {
         let token = self.peek();
         // Simple equality check for tokens without data
         if std::mem::discriminant(&token) == std::mem::discriminant(&expected) {
-             self.advance();
-             Ok(())
+            self.advance();
+            Ok(())
         } else {
-            Err(ParseError::UnexpectedToken(token, format!("Expected {:?}", expected)))
+            Err(ParseError::UnexpectedToken(
+                token,
+                format!("Expected {:?}", expected),
+            ))
         }
     }
 
     fn expect_identifier(&mut self) -> Result<String, ParseError> {
         match self.advance() {
             Token::Identifier(s) => Ok(s),
-            t => Err(ParseError::UnexpectedToken(t, "Expected Identifier".to_string())),
+            t => Err(ParseError::UnexpectedToken(
+                t,
+                "Expected Identifier".to_string(),
+            )),
         }
     }
-    
+
     // Helper to consume a token if it matches, otherwise do nothing
     fn consume_if(&mut self, expected_discriminant: Token) -> bool {
         if std::mem::discriminant(&self.peek()) == std::mem::discriminant(&expected_discriminant) {
@@ -66,12 +72,22 @@ impl Parser {
         self.expect(Token::LParenthesis)?;
         let x = match self.advance() {
             Token::Number(n) => n,
-            t => return Err(ParseError::UnexpectedToken(t, "Expected Number for X".to_string())),
+            t => {
+                return Err(ParseError::UnexpectedToken(
+                    t,
+                    "Expected Number for X".to_string(),
+                ));
+            }
         };
         self.expect(Token::Comma)?;
         let y = match self.advance() {
             Token::Number(n) => n,
-            t => return Err(ParseError::UnexpectedToken(t, "Expected Number for Y".to_string())),
+            t => {
+                return Err(ParseError::UnexpectedToken(
+                    t,
+                    "Expected Number for Y".to_string(),
+                ));
+            }
         };
         self.expect(Token::RParenthesis)?;
         Ok((x, y))
@@ -110,7 +126,12 @@ impl Parser {
                     action = self.parse_action_block()?;
                     self.expect(Token::RBrace)?;
                 }
-                _ => return Err(ParseError::UnexpectedToken(self.peek(), "Expected section start".to_string())),
+                _ => {
+                    return Err(ParseError::UnexpectedToken(
+                        self.peek(),
+                        "Expected section start".to_string(),
+                    ));
+                }
             }
         }
 
@@ -143,13 +164,18 @@ impl Parser {
                         // Optional newline/comma handling implicitly by loop
                         // But we might have commas
                         if self.peek() == Token::Comma {
-                             self.advance();
+                            self.advance();
                         }
                     }
                     self.expect(Token::RBrace)?;
                     self.consume_if(Token::Comma);
                 }
-                _ => return Err(ParseError::UnexpectedToken(self.peek(), "Expected state property".to_string())),
+                _ => {
+                    return Err(ParseError::UnexpectedToken(
+                        self.peek(),
+                        "Expected state property".to_string(),
+                    ));
+                }
             }
         }
         Ok(state)
@@ -164,12 +190,14 @@ impl Parser {
                     self.expect(Token::Equals)?;
                     self.expect(Token::LBrace)?;
                     while self.peek() != Token::RBrace {
-                         // p2 -> (xx2, yy2)
-                         let player = self.expect_identifier()?;
-                         self.expect(Token::Arrow)?;
-                         let target = self.parse_coordinate()?;
-                         action.moves.push(MoveAction { player, target });
-                         if self.peek() == Token::Comma { self.advance(); }
+                        // p2 -> (xx2, yy2)
+                        let player = self.expect_identifier()?;
+                        self.expect(Token::Arrow)?;
+                        let target = self.parse_coordinate()?;
+                        action.moves.push(MoveAction { player, target });
+                        if self.peek() == Token::Comma {
+                            self.advance();
+                        }
                     }
                     self.expect(Token::RBrace)?;
                     self.consume_if(Token::Comma);
@@ -178,22 +206,39 @@ impl Parser {
                     self.advance();
                     self.expect(Token::Equals)?;
                     self.expect(Token::LBrace)?;
-                     while self.peek() != Token::RBrace {
-                         // p3 -> p2:before
-                         let player = self.expect_identifier()?;
-                         self.expect(Token::Arrow)?;
-                         let target = self.expect_identifier()?;
-                         let mut timing = Timing::None;
-                         if self.peek() == Token::Colon {
-                             self.advance();
-                             match self.peek() {
-                                 Token::Before => { self.advance(); timing = Timing::Before; },
-                                 Token::After => { self.advance(); timing = Timing::After; },
-                                 t => return Err(ParseError::UnexpectedToken(t, "Expected timing".to_string())),
-                             }
-                         }
-                         action.screens.push(ScreenAction { player, target, timing });
-                         if self.peek() == Token::Comma { self.advance(); }
+                    while self.peek() != Token::RBrace {
+                        // p3 -> p2:before
+                        let player = self.expect_identifier()?;
+                        self.expect(Token::Arrow)?;
+                        let target = self.expect_identifier()?;
+                        let mut timing = Timing::None;
+                        if self.peek() == Token::Colon {
+                            self.advance();
+                            match self.peek() {
+                                Token::Before => {
+                                    self.advance();
+                                    timing = Timing::Before;
+                                }
+                                Token::After => {
+                                    self.advance();
+                                    timing = Timing::After;
+                                }
+                                t => {
+                                    return Err(ParseError::UnexpectedToken(
+                                        t,
+                                        "Expected timing".to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                        action.screens.push(ScreenAction {
+                            player,
+                            target,
+                            timing,
+                        });
+                        if self.peek() == Token::Comma {
+                            self.advance();
+                        }
                     }
                     self.expect(Token::RBrace)?;
                     self.consume_if(Token::Comma);
@@ -202,27 +247,45 @@ impl Parser {
                     self.advance();
                     self.expect(Token::Equals)?;
                     self.expect(Token::LBrace)?;
-                     while self.peek() != Token::RBrace {
-                         // p1 -> p2:after
-                         let from = self.expect_identifier()?;
-                         self.expect(Token::Arrow)?;
-                         let to = self.expect_identifier()?;
-                         let mut timing = Timing::None;
-                         if self.peek() == Token::Colon {
-                             self.advance();
-                             match self.peek() {
-                                 Token::Before => { self.advance(); timing = Timing::Before; },
-                                 Token::After => { self.advance(); timing = Timing::After; },
-                                 t => return Err(ParseError::UnexpectedToken(t, "Expected timing".to_string())),
-                             }
-                         }
-                         action.passes.push(PassAction { from, to, timing });
-                         if self.peek() == Token::Comma { self.advance(); }
+                    while self.peek() != Token::RBrace {
+                        // p1 -> p2:after
+                        let from = self.expect_identifier()?;
+                        self.expect(Token::Arrow)?;
+                        let to = self.expect_identifier()?;
+                        let mut timing = Timing::None;
+                        if self.peek() == Token::Colon {
+                            self.advance();
+                            match self.peek() {
+                                Token::Before => {
+                                    self.advance();
+                                    timing = Timing::Before;
+                                }
+                                Token::After => {
+                                    self.advance();
+                                    timing = Timing::After;
+                                }
+                                t => {
+                                    return Err(ParseError::UnexpectedToken(
+                                        t,
+                                        "Expected timing".to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                        action.passes.push(PassAction { from, to, timing });
+                        if self.peek() == Token::Comma {
+                            self.advance();
+                        }
                     }
                     self.expect(Token::RBrace)?;
                     self.consume_if(Token::Comma);
                 }
-                 _ => return Err(ParseError::UnexpectedToken(self.peek(), "Expected action property".to_string())),
+                _ => {
+                    return Err(ParseError::UnexpectedToken(
+                        self.peek(),
+                        "Expected action property".to_string(),
+                    ));
+                }
             }
         }
         Ok(action)
@@ -273,7 +336,7 @@ mod tests {
         assert_eq!(playbook.state.baller, Some("p1".to_string()));
         assert_eq!(playbook.state.positions.get("p1"), Some(&(0.0, 0.0)));
         assert_eq!(playbook.state.positions.get("p2"), Some(&(10.0, 20.0)));
-        
+
         assert_eq!(playbook.action.moves.len(), 1);
         assert_eq!(playbook.action.moves[0].player, "p2");
         assert_eq!(playbook.action.moves[0].target, (30.0, 40.0));
@@ -283,7 +346,7 @@ mod tests {
         assert_eq!(playbook.action.passes[0].to, "p2");
         // match enum variant roughly
         match playbook.action.passes[0].timing {
-            Timing::After => {},
+            Timing::After => {}
             _ => panic!("Expected After timing"),
         }
     }

@@ -35,7 +35,9 @@ impl IRGenerator {
         // 3. Create Interactions
         // Moves
         for move_action in playbook.action.moves {
-            let from = *start_positions.get(&move_action.player).unwrap_or(&(0.0, 0.0));
+            let from = *start_positions
+                .get(&move_action.player)
+                .unwrap_or(&(0.0, 0.0));
             interactions.push(Interaction::Move(MoveLine {
                 player_id: move_action.player,
                 from,
@@ -58,7 +60,9 @@ impl IRGenerator {
             let from = *start_positions.get(&screen.player).unwrap_or(&(0.0, 0.0));
             let to = match screen.timing {
                 Timing::Before => *start_positions.get(&screen.target).unwrap_or(&(0.0, 0.0)),
-                Timing::After | Timing::None => *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0)),
+                Timing::After | Timing::None => {
+                    *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0))
+                }
             };
             interactions.push(Interaction::Screen(ScreenLine {
                 screener_id: screen.player,
