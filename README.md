@@ -1,6 +1,10 @@
 # Playbook Lang
 
+<img src="./docs/static/img/logo.svg" width="200">
+
 A domain-specific language (DSL) for describing basketball playbooks and generating SVG previews.
+
+[documentation](https://playbook-lang.poteto-mahiro.com/)
 
 ## Features
 
@@ -39,7 +43,6 @@ action = {
     p1 -> p2:after
   },
 }
-
 ```
 
 ### 3 Run compile
