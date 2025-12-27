@@ -313,19 +313,19 @@ mod tests {
         let input = r#"
         players = { p1, p2 }
         state = {
-            baller = p1
+            baller = p1,
             position = {
                 p1 = (0, 0)
                 p2 = (10, 20)
-            }
+            },
         }
-        action {
+        action = {
             move = {
                 p2 -> (30, 40)
-            }
+            },
             pass = {
                 p1 -> p2:after
-            }
+            },
         }
         "#;
         let mut lexer = Lexer::new(input);

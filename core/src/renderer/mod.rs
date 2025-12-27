@@ -5,6 +5,12 @@ pub struct Renderer {
     height: u32,
 }
 
+impl Default for Renderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Renderer {
     pub fn new() -> Self {
         Self {
@@ -123,7 +129,7 @@ mod tests {
         let renderer = Renderer::new();
         let input = r#"            players = { p1, p2 }
             state = { baller = p1, position = { p1 = (0, 0), p2 = (50, 50) } }
-            action { move = { p2 -> (0, 50) } }
+            action = { move = { p2 -> (0, 50) } }
         "#;
         let output = renderer.render(input);
         assert!(output.contains("<svg"));
