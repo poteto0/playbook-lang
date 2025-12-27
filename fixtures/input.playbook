@@ -11,11 +11,11 @@ state = {
   },
 }
 
-action {
+action = {
   move = {
     p2 -> (0, 80)
-  }
+  },
   pass = {
     p1 -> p2:after
-  }
+  },
 }

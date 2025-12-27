@@ -121,6 +121,7 @@ impl Parser {
                 }
                 Token::Action => {
                     self.advance();
+                    self.expect(Token::Equals)?;
                     self.expect(Token::LBrace)?; // Action doesn't have '=', based on quickStart? Wait, quickStart says `action {` but others have `=`. quickStart: "action {"
                     // Let's re-read spec. "action {" no equals.
                     action = self.parse_action_block()?;
