@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  JUST_VERSION: "1.45.0"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup just
+        uses: extractions/setup-just@v3
+        with:
+          just-version: ${{ env.JUST_VERSION }}
+
+      - name: run lint with just
+        run: just lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup just
+        uses: extractions/setup-just@v3
+        with:
+          just-version: ${{ env.JUST_VERSION }}
+
+      - name: run tests with just
+        run: just test
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup just
+        uses: extractions/setup-just@v3
+        with:
+          just-version: ${{ env.JUST_VERSION }}
+
+      - name: just fmt
+        run: just fmt
