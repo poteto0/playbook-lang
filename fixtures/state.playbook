@@ -1,0 +1,9 @@
+players = {p1, p2}
+
+state = {
+  baller = p1,
+  position = {
+    p1 = (0, 60),
+    p2 = (90, -80),
+  },
+}

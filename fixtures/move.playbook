@@ -1,0 +1,13 @@
+players = {p1}
+
+state = {
+  position = {
+    p1 = (0, 60),
+  }
+}
+
+action = {
+  move = {
+    p1 -> (0, 0),
+  }
+}
