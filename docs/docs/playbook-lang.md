@@ -35,9 +35,9 @@ action = {
 Quickstart compile time(5 players 1 play);
 
 ```
-real    0m0.005s
+real    0m0.006s
 user    0m0.004s
-sys     0m0.001s
+sys     0m0.002s
 ```
 
 ### :goal_net: Someday, Be De Facto Standard
