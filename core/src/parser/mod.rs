@@ -269,10 +269,6 @@ impl Parser {
                                     self.advance();
                                     timing = Timing::After;
                                 }
-                                Token::Middle => {
-                                    self.advance();
-                                    timing = Timing::Middle;
-                                }
                                 t => {
                                     return Err(ParseError::UnexpectedToken(
                                         t,
