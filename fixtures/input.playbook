@@ -15,6 +15,9 @@ action = {
   move = {
     p2 -> (70, 20),
   },
+  screen = {
+    p4 -> p2:middle,
+  },
   pass = {
     p1 -> p2:after,
   },

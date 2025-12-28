@@ -44,5 +44,6 @@ pub struct PassAction {
 pub enum Timing {
     Before,
     After,
+    Middle,
     None, // Default if not specified
 }

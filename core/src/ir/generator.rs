@@ -50,6 +50,11 @@ impl IRGenerator {
             let from = *end_positions.get(&pass.from).unwrap_or(&(0.0, 0.0)); // Ball moves after or during action
             let to = match pass.timing {
                 Timing::Before => *start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
+                Timing::Middle => {
+                    let start = *start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
+                    let end = *end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
+                    ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
+                }
                 Timing::After | Timing::None => *end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
             };
             interactions.push(Interaction::Pass(PassLine { from, to }));
@@ -60,6 +65,11 @@ impl IRGenerator {
             let from = *start_positions.get(&screen.player).unwrap_or(&(0.0, 0.0));
             let to = match screen.timing {
                 Timing::Before => *start_positions.get(&screen.target).unwrap_or(&(0.0, 0.0)),
+                Timing::Middle => {
+                    let start = *start_positions.get(&screen.target).unwrap_or(&(0.0, 0.0));
+                    let end = *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0));
+                    ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
+                }
                 Timing::After | Timing::None => {
                     *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0))
                 }

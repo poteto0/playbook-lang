@@ -101,10 +101,44 @@ impl Renderer {
     }
 
     fn render_screen(&self, s: &ScreenLine) -> String {
-        format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"blue\" stroke-width=\"4\" />",
+        let dx = s.to.0 - s.from.0;
+        let dy = s.to.1 - s.from.1;
+        let len = (dx * dx + dy * dy).sqrt();
+
+        // Normalized direction. Default to (0, 1) (downward) if stationary, resulting in horizontal bar.
+        let (nx, ny) = if len > 0.001 {
+            (dx / len, dy / len)
+        } else {
+            (0.0, 1.0)
+        };
+
+        // Perpendicular vector (-y, x)
+        let px = -ny;
+        let py = nx;
+
+        let bar_len = 10.0;
+        let half_bar = bar_len / 2.0;
+
+        // Coordinates for the perpendicular bar
+        let bx1 = s.to.0 - px * half_bar;
+        let by1 = s.to.1 - py * half_bar;
+        let bx2 = s.to.0 + px * half_bar;
+        let by2 = s.to.1 + py * half_bar;
+
+        let mut svg = String::new();
+        // Draw the movement line (stem)
+        svg.push_str(&format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
             s.from.0, s.from.1, s.to.0, s.to.1
-        )
+        ));
+
+        // Draw the perpendicular bar at 'to'
+        svg.push_str(&format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
+            bx1, by1, bx2, by2
+        ));
+
+        svg
     }
 
     fn render_player(&self, entity: &Entity) -> String {

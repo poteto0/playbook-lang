@@ -11,6 +11,7 @@ pub enum Token {
     Pass,
     Before,
     After,
+    Middle,
 
     // Identifiers & Values
     Identifier(String),
@@ -188,6 +189,7 @@ impl<'a> Lexer<'a> {
                     "pass" => Token::Pass,
                     "before" => Token::Before,
                     "after" => Token::After,
+                    "middle" => Token::Middle,
                     _ => Token::Identifier(ident),
                 }
             }
