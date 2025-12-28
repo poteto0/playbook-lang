@@ -105,34 +105,39 @@ impl Renderer {
         let dy = s.to.1 - s.from.1;
         let len = (dx * dx + dy * dy).sqrt();
 
-        // Normalized direction. Default to (0, 1) (downward) if stationary, resulting in horizontal bar.
+        // Normalized direction. Default to (0, 1) (downward) if stationary.
         let (nx, ny) = if len > 0.001 {
             (dx / len, dy / len)
         } else {
             (0.0, 1.0)
         };
 
+        // Offset the screen position slightly towards the screener (from)
+        let shift_amount = 5.0;
+        let cx = s.to.0 - nx * shift_amount;
+        let cy = s.to.1 - ny * shift_amount;
+
         // Perpendicular vector (-y, x)
         let px = -ny;
         let py = nx;
 
-        let bar_len = 10.0;
+        let bar_len = 15.0;
         let half_bar = bar_len / 2.0;
 
-        // Coordinates for the perpendicular bar
-        let bx1 = s.to.0 - px * half_bar;
-        let by1 = s.to.1 - py * half_bar;
-        let bx2 = s.to.0 + px * half_bar;
-        let by2 = s.to.1 + py * half_bar;
+        // Coordinates for the perpendicular bar centered at (cx, cy)
+        let bx1 = cx - px * half_bar;
+        let by1 = cy - py * half_bar;
+        let bx2 = cx + px * half_bar;
+        let by2 = cy + py * half_bar;
 
         let mut svg = String::new();
-        // Draw the movement line (stem)
+        // Draw the movement line (stem) to the shifted center
         svg.push_str(&format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
-            s.from.0, s.from.1, s.to.0, s.to.1
+            s.from.0, s.from.1, cx, cy
         ));
 
-        // Draw the perpendicular bar at 'to'
+        // Draw the perpendicular bar
         svg.push_str(&format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
             bx1, by1, bx2, by2
