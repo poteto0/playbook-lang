@@ -5,6 +5,10 @@ slug: /
 
 # Playbook-Lang
 
+Try it easily.
+
+[web-playground](https://playbook-lang-app.poteto-mahiro.com/)
+
 ## DSL for BasketBall Playbook.
 
 ### :rocket: write playbook by markup language

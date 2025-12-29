@@ -6,6 +6,8 @@ A domain-specific language (DSL) for describing basketball playbooks and generat
 
 [documentation](https://playbook-lang.poteto-mahiro.com/)
 
+[web-playground](https://playbook-lang-app.poteto-mahiro.com/)
+
 ## Features
 
 - **Simple DSL**: Human-readable syntax to describe player positions and actions.
