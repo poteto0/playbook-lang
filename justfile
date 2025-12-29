@@ -26,3 +26,7 @@ release-cli:
     @cargo build --release -p playbook-cli
     @mkdir -p build
     @cp ./target/release/playbook-cli build/
+
+[working-directory("core")]
+release-wasm:
+    @wasm-pack build --target web

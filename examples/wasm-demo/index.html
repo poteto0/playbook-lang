@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook WASM Demo</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        height: 100vh;
+        box-sizing: border-box;
+      }
+      .input-section {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      textarea {
+        flex: 1;
+        font-family: monospace;
+        padding: 1rem;
+        resize: none;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      .output-section {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 1rem;
+        overflow: auto;
+        background: #f9f9f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      h2 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="input-section">
+      <h2>Input (Playbook)</h2>
+      <textarea id="input" spellcheck="false">
+// Sample Playbook
+players = { p1, p2, p3, p4, p5 }
+
+state = {
+  baller = p1,
+  position = {
+    p1 = (0, 60),
+    p2 = (90, -80),
+    p3 = (-90, -80),
+    p4 = (50, -10),
+    p5 = (-50, -10),
+  },
+}
+
+action = {
+  move = {
+    p2 -> (70, 20),
+    p3 -> (0, -80),
+  },
+  screen = {
+    p4 -> p2:middle,
+    p5 -> p3:middle,
+  },
+  pass = {
+    p1 -> p2:after,
+  },
+}
+</textarea
+      >
+    </div>
+    <div class="output-section">
+      <div id="output"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
