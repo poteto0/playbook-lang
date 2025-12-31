@@ -21,8 +21,12 @@ fn levenshtein(a: &str, b: &str) -> usize {
 
     let mut matrix = vec![vec![0; len_b + 1]; len_a + 1];
 
-    for i in 0..=len_a { matrix[i][0] = i; }
-    for j in 0..=len_b { matrix[0][j] = j; }
+    for (i, column) in matrix.iter_mut().enumerate() {
+        column[0] = i;
+    }
+    for (j, row) in matrix[0].iter_mut().enumerate() {
+        *row = j;
+    }
 
     for (i, char_a) in a.chars().enumerate() {
         for (j, char_b) in b.chars().enumerate() {
