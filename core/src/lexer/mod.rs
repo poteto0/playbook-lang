@@ -55,8 +55,8 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { 
-            input, 
+        Self {
+            input,
             pos: 0,
             line: 1,
             column: 1,
@@ -141,15 +141,17 @@ impl<'a> Lexer<'a> {
 
         let c = match self.peek() {
             Some(c) => c,
-            None => return Token {
-                kind: TokenKind::EOF,
-                span: Span {
-                    start: start_pos,
-                    end: start_pos,
-                    line: start_line,
-                    column: start_column,
-                }
-            },
+            None => {
+                return Token {
+                    kind: TokenKind::EOF,
+                    span: Span {
+                        start: start_pos,
+                        end: start_pos,
+                        line: start_line,
+                        column: start_column,
+                    },
+                };
+            }
         };
 
         let kind = match c {
@@ -319,7 +321,7 @@ mod tests {
             ]
         );
     }
-    
+
     #[test]
     fn test_span() {
         let input = "players";
@@ -327,7 +329,7 @@ mod tests {
         let tokens = lexer.tokenize();
         assert_eq!(tokens[0].span.line, 1);
         assert_eq!(tokens[0].span.column, 1);
-        
+
         let input = "\n  players";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();

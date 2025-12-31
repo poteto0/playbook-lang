@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::lexer::{Token, TokenKind, Span};
+use crate::lexer::{Span, Token, TokenKind};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -16,8 +16,12 @@ pub struct Parser {
 fn levenshtein(a: &str, b: &str) -> usize {
     let len_a = a.chars().count();
     let len_b = b.chars().count();
-    if len_a == 0 { return len_b; }
-    if len_b == 0 { return len_a; }
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
 
     let mut matrix = vec![vec![0; len_b + 1]; len_a + 1];
 
@@ -33,7 +37,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
             let cost = if char_a == char_b { 0 } else { 1 };
             matrix[i + 1][j + 1] = std::cmp::min(
                 std::cmp::min(matrix[i][j + 1] + 1, matrix[i + 1][j] + 1),
-                matrix[i][j] + cost
+                matrix[i][j] + cost,
             );
         }
     }
@@ -65,7 +69,12 @@ impl Parser {
         } else {
             Token {
                 kind: TokenKind::EOF,
-                span: Span { start: 0, end: 0, line: 0, column: 0 }
+                span: Span {
+                    start: 0,
+                    end: 0,
+                    line: 0,
+                    column: 0,
+                },
             }
         }
     }
@@ -149,7 +158,9 @@ impl Parser {
                     self.advance(); // consume 'players'
                     self.expect(TokenKind::Equals)?;
                     self.expect(TokenKind::LBrace)?;
-                    while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
+                    while self.peek().kind != TokenKind::RBrace
+                        && self.peek().kind != TokenKind::EOF
+                    {
                         players.push(self.expect_identifier()?);
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
@@ -167,7 +178,7 @@ impl Parser {
                 TokenKind::Action => {
                     self.advance();
                     self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?; 
+                    self.expect(TokenKind::LBrace)?;
                     action = self.parse_action_block()?;
                     self.expect(TokenKind::RBrace)?;
                 }
@@ -175,9 +186,9 @@ impl Parser {
                     let token = self.peek();
                     let mut msg = "Expected section start (players, state, action)".to_string();
                     if let TokenKind::Identifier(ref s) = token.kind {
-                         if let Some(sugg) = get_suggestion(s, &["players", "state", "action"]) {
-                             msg = format!("Expected section start. Did you mean '{}'?", sugg);
-                         }
+                        if let Some(sugg) = get_suggestion(s, &["players", "state", "action"]) {
+                            msg = format!("Expected section start. Did you mean '{}'?", sugg);
+                        }
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }
@@ -199,7 +210,7 @@ impl Parser {
                     self.advance();
                     self.expect(TokenKind::Equals)?;
                     state.baller = Some(self.expect_identifier()?);
-                    self.consume_if(TokenKind::Comma); 
+                    self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Position => {
                     self.advance();
@@ -221,9 +232,9 @@ impl Parser {
                     let token = self.peek();
                     let mut msg = "Expected state property (baller, position)".to_string();
                     if let TokenKind::Identifier(ref s) = token.kind {
-                         if let Some(sugg) = get_suggestion(s, &["baller", "position"]) {
-                             msg = format!("Expected state property. Did you mean '{}'?", sugg);
-                         }
+                        if let Some(sugg) = get_suggestion(s, &["baller", "position"]) {
+                            msg = format!("Expected state property. Did you mean '{}'?", sugg);
+                        }
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }
@@ -336,9 +347,9 @@ impl Parser {
                     let token = self.peek();
                     let mut msg = "Expected action property (move, screen, pass)".to_string();
                     if let TokenKind::Identifier(ref s) = token.kind {
-                         if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass"]) {
-                             msg = format!("Expected action property. Did you mean '{}'?", sugg);
-                         }
+                        if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass"]) {
+                            msg = format!("Expected action property. Did you mean '{}'?", sugg);
+                        }
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }

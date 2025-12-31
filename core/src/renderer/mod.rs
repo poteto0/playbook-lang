@@ -57,7 +57,8 @@ impl Renderer {
         ));
 
         // 0. Global Background (White fill for everything)
-        court.push_str("<rect x=\"-105\" y=\"-105\" width=\"210\" height=\"210\" fill=\"white\" />");
+        court
+            .push_str("<rect x=\"-105\" y=\"-105\" width=\"210\" height=\"210\" fill=\"white\" />");
 
         // 1. Court Boundary (Half court)
         // Black border. Covers the half court area. Fill is already white from background, but keeping fill=\"white\" ensures opacity if layers change.
@@ -174,7 +175,7 @@ impl Renderer {
     pub fn render(&self, input: &str) -> Result<String, String> {
         use crate::ir::IRGenerator;
         use crate::lexer::Lexer;
-        use crate::parser::{Parser, ParseError};
+        use crate::parser::{ParseError, Parser};
 
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
@@ -188,9 +189,11 @@ impl Renderer {
             Err(e) => {
                 let error_msg = match e {
                     ParseError::UnexpectedToken(token, msg) => {
-                        format!("Error at line {}, column {}: {} (found {:?})", 
-                            token.span.line, token.span.column, msg, token.kind)
-                    },
+                        format!(
+                            "Error at line {}, column {}: {} (found {:?})",
+                            token.span.line, token.span.column, msg, token.kind
+                        )
+                    }
                     ParseError::UnexpectedEOF => "Error: Unexpected End of File".to_string(),
                     ParseError::InvalidSyntax(msg) => format!("Error: {}", msg),
                 };
@@ -226,7 +229,7 @@ mod tests {
         assert!(output.contains("Error"));
         // EOF handling is tricky to test specific line without knowing where EOF span lands,
         // but it should contain "Error" and likely "Expected RBrace".
-        assert!(output.contains("Expected RBrace")); 
+        assert!(output.contains("Expected RBrace"));
     }
 
     #[test]
