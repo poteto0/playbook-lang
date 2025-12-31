@@ -185,10 +185,11 @@ impl Parser {
                 _ => {
                     let token = self.peek();
                     let mut msg = "Expected section start (players, state, action)".to_string();
-                    if let TokenKind::Identifier(ref s) = token.kind {
-                        if let Some(sugg) = get_suggestion(s, &["players", "state", "action"]) {
-                            msg = format!("Expected section start. Did you mean '{}'?", sugg);
-                        }
+                    let TokenKind::Identifier(ref s) = token.kind else {
+                        return Err(ParseError::UnexpectedToken(token, msg));
+                    };
+                    if let Some(sugg) = get_suggestion(s, &["players", "state", "action"]) {
+                        msg = format!("Expected section start. Did you mean '{}'?", sugg);
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }
