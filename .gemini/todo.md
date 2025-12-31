@@ -3,3 +3,10 @@
     - [x] コートは 3on3 のように片方のコートの 3P ライン付近だけを書く
     - [x] 上中央に、赤色でゴールリングを書く
     - [x] 黒色で 3 ポイントラインと、フリースローラインを書く
+
+## Compile Error Implementation
+- [x] エラーハンドリングの改善
+    - [x] Lexer: Tokenに位置情報(Span)を含める
+    - [x] Parser: エラー時に位置情報を報告する
+    - [x] Renderer: エラーメッセージをテキストとして返す (SVGではない)
+    - [x] Typo修正提案機能 (Levenshtein distance <= 2)

@@ -171,10 +171,10 @@ impl Renderer {
         player
     }
 
-    pub fn render(&self, input: &str) -> String {
+    pub fn render(&self, input: &str) -> Result<String, String> {
         use crate::ir::IRGenerator;
         use crate::lexer::Lexer;
-        use crate::parser::Parser;
+        use crate::parser::{Parser, ParseError};
 
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
@@ -183,9 +183,19 @@ impl Renderer {
         match parser.parse() {
             Ok(playbook) => {
                 let scene = IRGenerator::generate(playbook);
-                self.render_scene(&scene)
+                Ok(self.render_scene(&scene))
             }
-            Err(e) => format!("<svg><text>Parse Error: {:?}</text></svg>", e),
+            Err(e) => {
+                let error_msg = match e {
+                    ParseError::UnexpectedToken(token, msg) => {
+                        format!("Error at line {}, column {}: {} (found {:?})", 
+                            token.span.line, token.span.column, msg, token.kind)
+                    },
+                    ParseError::UnexpectedEOF => "Error: Unexpected End of File".to_string(),
+                    ParseError::InvalidSyntax(msg) => format!("Error: {}", msg),
+                };
+                Err(error_msg)
+            }
         }
     }
 }
@@ -201,10 +211,29 @@ mod tests {
             state = { baller = p1, position = { p1 = (0, 0), p2 = (50, 50) } }
             action = { move = { p2 -> (0, 50) } }
         "#;
-        let output = renderer.render(input);
+        let output = renderer.render(input).expect("Failed to render");
         assert!(output.contains("<svg"));
         assert!(output.contains("circle"));
         assert!(output.contains(">1<"));
         assert!(output.contains(">2<"));
+    }
+
+    #[test]
+    fn test_error_reporting() {
+        let renderer = Renderer::new();
+        let input = "players = { "; // Missing closing brace
+        let output = renderer.render(input).unwrap_err();
+        assert!(output.contains("Error"));
+        // EOF handling is tricky to test specific line without knowing where EOF span lands,
+        // but it should contain "Error" and likely "Expected RBrace".
+        assert!(output.contains("Expected RBrace")); 
+    }
+
+    #[test]
+    fn test_typo_suggestion() {
+        let renderer = Renderer::new();
+        let input = "aciton = { }"; // typo: action
+        let output = renderer.render(input).unwrap_err();
+        assert!(output.contains("Did you mean 'action'?"));
     }
 }

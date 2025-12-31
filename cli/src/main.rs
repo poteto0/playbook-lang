@@ -19,17 +19,25 @@ fn main() {
 
     let input_content = fs::read_to_string(&args.input).expect("Failed to read input file");
     let renderer = Renderer::new();
-    let svg = renderer.render(&input_content);
+    let result = renderer.render(&input_content);
 
-    let output_path = args.output.unwrap_or_else(|| {
-        let mut path = args.input.clone();
-        path.set_extension("svg");
-        path
-    });
+    match result {
+        Ok(svg) => {
+            let output_path = args.output.unwrap_or_else(|| {
+                let mut path = args.input.clone();
+                path.set_extension("svg");
+                path
+            });
 
-    fs::write(&output_path, svg).expect("Failed to write output file");
-    println!(
-        "Successfully converted {:?} to {:?}",
-        args.input, output_path
-    );
+            fs::write(&output_path, svg).expect("Failed to write output file");
+            println!(
+                "Successfully converted {:?} to {:?}",
+                args.input, output_path
+            );
+        }
+        Err(e) => {
+            eprintln!("Compile Error:\n{}", e);
+            std::process::exit(1);
+        }
+    }
 }

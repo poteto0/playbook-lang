@@ -1,5 +1,19 @@
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+    pub line: usize,
+    pub column: usize,
+}
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenKind {
     // Keywords
     Players,
     State,
@@ -35,11 +49,18 @@ pub enum Token {
 pub struct Lexer<'a> {
     input: &'a str,
     pos: usize,
+    line: usize,
+    column: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self { 
+            input, 
+            pos: 0,
+            line: 1,
+            column: 1,
+        }
     }
 
     fn peek(&self) -> Option<char> {
@@ -49,6 +70,12 @@ impl<'a> Lexer<'a> {
     fn advance(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.pos += c.len_utf8();
+        if c == '\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
         Some(c)
     }
 
@@ -108,95 +135,113 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
+        let start_pos = self.pos;
+        let start_line = self.line;
+        let start_column = self.column;
+
         let c = match self.peek() {
             Some(c) => c,
-            None => return Token::EOF,
+            None => return Token {
+                kind: TokenKind::EOF,
+                span: Span {
+                    start: start_pos,
+                    end: start_pos,
+                    line: start_line,
+                    column: start_column,
+                }
+            },
         };
 
-        match c {
+        let kind = match c {
             '=' => {
                 self.advance();
-                Token::Equals
+                TokenKind::Equals
             }
             '{' => {
                 self.advance();
-                Token::LBrace
+                TokenKind::LBrace
             }
             '}' => {
                 self.advance();
-                Token::RBrace
+                TokenKind::RBrace
             }
             '(' => {
                 self.advance();
-                Token::LParenthesis
+                TokenKind::LParenthesis
             }
             ')' => {
                 self.advance();
-                Token::RParenthesis
+                TokenKind::RParenthesis
             }
             ',' => {
                 self.advance();
-                Token::Comma
+                TokenKind::Comma
             }
             ':' => {
                 self.advance();
-                Token::Colon
+                TokenKind::Colon
             }
             '-' => {
                 if self.starts_with("->") {
                     self.advance();
                     self.advance();
-                    Token::Arrow
+                    TokenKind::Arrow
                 } else if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                    Token::Number(self.read_number())
+                    TokenKind::Number(self.read_number())
                 } else {
-                    // For now, treat isolated '-' as part of identifier or error, but here let's assume it might be a negative number start or just skip/error.
-                    // Given the spec, '-' usually starts a negative number or arrow.
-                    // If it's not arrow, check if next is digit.
                     let next_char_is_digit = self.input[self.pos + 1..]
                         .chars()
                         .next()
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false);
                     if next_char_is_digit {
-                        Token::Number(self.read_number())
+                        TokenKind::Number(self.read_number())
                     } else {
-                        // Fallback or error? For now let's just consume it to avoid infinite loop if unexpected
                         self.advance();
-                        Token::Identifier("-".to_string())
+                        TokenKind::Identifier("-".to_string())
                     }
                 }
             }
             '/' => {
                 if self.starts_with("//") {
-                    Token::Comment(self.read_comment())
+                    TokenKind::Comment(self.read_comment())
                 } else {
                     self.advance();
-                    Token::Identifier("/".to_string()) // Unexpected
+                    TokenKind::Identifier("/".to_string())
                 }
             }
-            _ if c.is_ascii_digit() => Token::Number(self.read_number()),
+            _ if c.is_ascii_digit() => TokenKind::Number(self.read_number()),
             _ if c.is_alphabetic() => {
                 let ident = self.read_identifier();
                 match ident.as_str() {
-                    "players" => Token::Players,
-                    "state" => Token::State,
-                    "baller" => Token::Baller,
-                    "position" => Token::Position,
-                    "action" => Token::Action,
-                    "move" => Token::Move,
-                    "screen" => Token::Screen,
-                    "pass" => Token::Pass,
-                    "before" => Token::Before,
-                    "after" => Token::After,
-                    "middle" => Token::Middle,
-                    _ => Token::Identifier(ident),
+                    "players" => TokenKind::Players,
+                    "state" => TokenKind::State,
+                    "baller" => TokenKind::Baller,
+                    "position" => TokenKind::Position,
+                    "action" => TokenKind::Action,
+                    "move" => TokenKind::Move,
+                    "screen" => TokenKind::Screen,
+                    "pass" => TokenKind::Pass,
+                    "before" => TokenKind::Before,
+                    "after" => TokenKind::After,
+                    "middle" => TokenKind::Middle,
+                    _ => TokenKind::Identifier(ident),
                 }
             }
             _ => {
                 self.advance();
-                Token::Identifier(c.to_string()) // Unexpected char
+                TokenKind::Identifier(c.to_string())
             }
+        };
+
+        Token {
+            kind,
+            span: Span {
+                start: start_pos,
+                end: self.pos,
+                line: start_line,
+                column: start_column,
+            },
         }
     }
 
@@ -204,7 +249,7 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         loop {
             let token = self.next_token();
-            if token == Token::EOF {
+            if let TokenKind::EOF = token.kind {
                 tokens.push(token);
                 break;
             }
@@ -223,16 +268,17 @@ mod tests {
         let input = "players = { } -> :";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
         assert_eq!(
-            tokens,
+            kinds,
             vec![
-                Token::Players,
-                Token::Equals,
-                Token::LBrace,
-                Token::RBrace,
-                Token::Arrow,
-                Token::Colon,
-                Token::EOF
+                TokenKind::Players,
+                TokenKind::Equals,
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::Arrow,
+                TokenKind::Colon,
+                TokenKind::EOF
             ]
         );
     }
@@ -242,16 +288,17 @@ mod tests {
         let input = "p1 (10, -20.5)";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
         assert_eq!(
-            tokens,
+            kinds,
             vec![
-                Token::Identifier("p1".to_string()),
-                Token::LParenthesis,
-                Token::Number(10.0),
-                Token::Comma,
-                Token::Number(-20.5),
-                Token::RParenthesis,
-                Token::EOF
+                TokenKind::Identifier("p1".to_string()),
+                TokenKind::LParenthesis,
+                TokenKind::Number(10.0),
+                TokenKind::Comma,
+                TokenKind::Number(-20.5),
+                TokenKind::RParenthesis,
+                TokenKind::EOF
             ]
         );
     }
@@ -261,32 +308,30 @@ mod tests {
         let input = "players // this is a comment\nstate";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
         assert_eq!(
-            tokens,
+            kinds,
             vec![
-                Token::Players,
-                Token::Comment("this is a comment".to_string()),
-                Token::State,
-                Token::EOF
+                TokenKind::Players,
+                TokenKind::Comment("this is a comment".to_string()),
+                TokenKind::State,
+                TokenKind::EOF
             ]
         );
     }
-
+    
     #[test]
-    fn test_full_snippet() {
-        let input = r#"""
-            action {
-                move = {
-                    p2 -> (10, 20)
-                }
-            }
-        """#;
+    fn test_span() {
+        let input = "players";
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
-        // Check a few key tokens
-        assert!(tokens.contains(&Token::Action));
-        assert!(tokens.contains(&Token::Move));
-        assert!(tokens.contains(&Token::Arrow));
-        assert!(tokens.contains(&Token::Number(10.0)));
+        assert_eq!(tokens[0].span.line, 1);
+        assert_eq!(tokens[0].span.column, 1);
+        
+        let input = "\n  players";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        assert_eq!(tokens[0].span.line, 2);
+        assert_eq!(tokens[0].span.column, 3);
     }
 }
