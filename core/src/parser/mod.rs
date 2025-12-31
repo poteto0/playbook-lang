@@ -232,10 +232,11 @@ impl Parser {
                 _ => {
                     let token = self.peek();
                     let mut msg = "Expected state property (baller, position)".to_string();
-                    if let TokenKind::Identifier(ref s) = token.kind {
-                        if let Some(sugg) = get_suggestion(s, &["baller", "position"]) {
-                            msg = format!("Expected state property. Did you mean '{}'?", sugg);
-                        }
+                    let TokenKind::Identifier(ref s) = token.kind else {
+                        return Err(ParseError::UnexpectedToken(token, msg));
+                    };
+                    if let Some(sugg) = get_suggestion(s, &["baller", "position"]) {
+                        msg = format!("Expected state property. Did you mean '{}'?", sugg);
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }
@@ -347,10 +348,11 @@ impl Parser {
                 _ => {
                     let token = self.peek();
                     let mut msg = "Expected action property (move, screen, pass)".to_string();
-                    if let TokenKind::Identifier(ref s) = token.kind {
-                        if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass"]) {
-                            msg = format!("Expected action property. Did you mean '{}'?", sugg);
-                        }
+                    let TokenKind::Identifier(ref s) = token.kind else {
+                        return Err(ParseError::UnexpectedToken(token, msg));
+                    };
+                    if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass"]) {
+                        msg = format!("Expected action property. Did you mean '{}'?", sugg);
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
                 }
