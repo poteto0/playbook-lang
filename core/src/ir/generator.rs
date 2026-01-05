@@ -4,7 +4,7 @@ use crate::ir::*;
 pub struct IRGenerator;
 
 impl IRGenerator {
-    pub fn generate(playbook: Playbook) -> Scene {
+    pub fn generate(playbook: Playbook) -> Result<Scene, String> {
         let mut entities = Vec::new();
         let mut interactions = Vec::new();
 
@@ -47,6 +47,11 @@ impl IRGenerator {
 
         // Passes
         for pass in playbook.action.passes {
+            // check from is passer?
+            if !is_baller(&entities, &pass.from) {
+                return Err(format!("Player {} does not have the ball", pass.from));
+            }
+
             let from = *end_positions.get(&pass.from).unwrap_or(&(0.0, 0.0)); // Ball moves after or during action
             let to = match pass.timing {
                 Timing::Before => *start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
@@ -81,10 +86,10 @@ impl IRGenerator {
             }));
         }
 
-        Scene {
+        Ok(Scene {
             entities,
             interactions,
-        }
+        })
     }
 }
 
@@ -120,7 +125,7 @@ mod tests {
             },
         };
 
-        let scene = IRGenerator::generate(playbook);
+        let scene = IRGenerator::generate(playbook).unwrap();
 
         assert_eq!(scene.entities.len(), 2);
         let p2_entity = scene.entities.iter().find(|e| e.id == "p2").unwrap();
@@ -133,5 +138,32 @@ mod tests {
         } else {
             panic!("Expected Pass interaction");
         }
+    }
+
+    #[test]
+    fn test_pass_without_ball() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 0.0));
+        positions.insert("p2".to_string(), (10.0, 10.0));
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string(), "p2".to_string()],
+            state: State {
+                baller: Some("p2".to_string()), // p2 has the ball
+                positions,
+            },
+            action: Action {
+                passes: vec![PassAction {
+                    from: "p1".to_string(), // p1 tries to pass
+                    to: "p2".to_string(),
+                    timing: Timing::After,
+                }],
+                ..Default::default()
+            },
+        };
+
+        let result = IRGenerator::generate(playbook);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Player p1 does not have the ball");
     }
 }

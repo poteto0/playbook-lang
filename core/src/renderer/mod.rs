@@ -183,7 +183,7 @@ impl Renderer {
 
         match parser.parse() {
             Ok(playbook) => {
-                let scene = IRGenerator::generate(playbook);
+                let scene = IRGenerator::generate(playbook)?;
                 Ok(self.render_scene(&scene))
             }
             Err(e) => {
