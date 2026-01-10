@@ -1,10 +1,11 @@
-players = {p1, p2}
+players = {p1, p2, p3}
 
 state = {
   baller = p1,
   position = {
     p1 = (0, 60),
     p2 = (50, 0),
+    p3 = (-50, 0),
   },
 }
 
@@ -15,5 +16,6 @@ action = {
 
   screen = {
     p2 -> p1:middle,
+    p3 ~[r]> (0, 50),
   }
 }
