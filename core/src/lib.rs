@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 pub mod ast;
+pub mod constants;
 pub mod ir;
 pub mod lexer;
 pub mod parser;

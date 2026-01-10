@@ -1,0 +1,1 @@
+pub const DEFAULT_BEZIER_CURVE_FACTOR: f64 = 0.3;

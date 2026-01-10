@@ -105,6 +105,7 @@ impl Renderer {
         }
     }
 
+    /// Bezier curve
     fn calculate_control_point(
         &self,
         from: (f64, f64),
@@ -116,11 +117,9 @@ impl Renderer {
         let mid_x = (from.0 + to.0) / 2.0;
         let mid_y = (from.1 + to.1) / 2.0;
 
-        let factor = 0.3;
-
-        let (nx, ny) = match dir {
-            crate::ast::CurveDirection::Left => (dy, -dx),
-            crate::ast::CurveDirection::Right => (-dy, dx),
+        let (nx, ny, factor) = match dir {
+            crate::ast::CurveDirection::Left(f) => (dy, -dx, *f),
+            crate::ast::CurveDirection::Right(f) => (-dy, dx, *f),
         };
 
         (mid_x + nx * factor, mid_y + ny * factor)

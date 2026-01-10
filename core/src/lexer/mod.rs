@@ -39,7 +39,7 @@ pub enum TokenKind {
     RParenthesis,       // )
     Comma,              // ,
     Arrow,              // ->
-    CurveArrow(String), // ~> (default), ~[left]>, ~[right]>
+    CurveArrow(String), // ~> (default: l), ~[l]>, ~[r]>
     Colon,              // :
 
     // Special
@@ -133,6 +133,17 @@ impl<'a> Lexer<'a> {
         self.input[start..self.pos].trim().to_string()
     }
 
+    fn read_inside_brackets(&mut self) -> String {
+        let start = self.pos;
+        while let Some(c) = self.peek() {
+            if c == ']' {
+                break;
+            }
+            self.advance();
+        }
+        self.input[start..self.pos].to_string()
+    }
+
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
@@ -213,13 +224,13 @@ impl<'a> Lexer<'a> {
                 } else if self.starts_with("~[") {
                     self.advance(); // ~
                     self.advance(); // [
-                    let dir = self.read_identifier();
+                    let content = self.read_inside_brackets();
                     if self.starts_with("]>") {
-                        self.advance();
-                        self.advance();
-                        TokenKind::CurveArrow(dir)
+                        self.advance(); // ]
+                        self.advance(); // >
+                        TokenKind::CurveArrow(content)
                     } else {
-                        TokenKind::Identifier(format!("~[{}]", dir))
+                        TokenKind::Identifier(format!("~[{}]", content))
                     }
                 } else {
                     self.advance();

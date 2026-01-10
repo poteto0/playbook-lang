@@ -64,6 +64,6 @@ pub enum PathType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CurveDirection {
-    Left,
-    Right,
+    Left(f64),
+    Right(f64),
 }

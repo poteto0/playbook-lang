@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::constants::DEFAULT_BEZIER_CURVE_FACTOR;
 use crate::lexer::{Span, Token, TokenKind};
 
 #[derive(Debug)]
@@ -254,13 +255,28 @@ impl Parser {
             }
             TokenKind::CurveArrow(ref s) => {
                 self.advance();
-                match s.as_str() {
-                    "default" => Ok(PathType::Curve(CurveDirection::Left)),
-                    "l" => Ok(PathType::Curve(CurveDirection::Left)),
-                    "r" => Ok(PathType::Curve(CurveDirection::Right)),
+                if s == "default" {
+                    return Ok(PathType::Curve(CurveDirection::Left(
+                        DEFAULT_BEZIER_CURVE_FACTOR,
+                    )));
+                }
+
+                let parts: Vec<&str> = s.split(':').collect();
+                let dir_str = parts[0];
+                let factor = if parts.len() > 1 {
+                    parts[1].parse::<f64>().map_err(|_| {
+                        ParseError::InvalidSyntax(format!("Invalid curve factor: {}", parts[1]))
+                    })?
+                } else {
+                    DEFAULT_BEZIER_CURVE_FACTOR
+                };
+
+                match dir_str {
+                    "l" | "left" => Ok(PathType::Curve(CurveDirection::Left(factor))),
+                    "r" | "right" => Ok(PathType::Curve(CurveDirection::Right(factor))),
                     _ => Err(ParseError::InvalidSyntax(format!(
                         "Unknown curve direction: {}",
-                        s
+                        dir_str
                     ))),
                 }
             }
@@ -519,18 +535,46 @@ mod tests {
         assert_eq!(playbook.action.moves.len(), 3);
 
         match playbook.action.moves[0].path_type {
-            PathType::Curve(CurveDirection::Left) => {}
+            PathType::Curve(CurveDirection::Left(DEFAULT_BEZIER_CURVE_FACTOR)) => {}
             _ => panic!("Expected Left Curve"),
         }
 
         match playbook.action.moves[1].path_type {
-            PathType::Curve(CurveDirection::Right) => {}
+            PathType::Curve(CurveDirection::Right(DEFAULT_BEZIER_CURVE_FACTOR)) => {}
             _ => panic!("Expected Right Curve"),
         }
 
         match playbook.action.moves[2].path_type {
-            PathType::Curve(CurveDirection::Left) => {} // Default is Left
+            PathType::Curve(CurveDirection::Left(DEFAULT_BEZIER_CURVE_FACTOR)) => {} // Default is Left
             _ => panic!("Expected Default (Left) Curve"),
+        }
+    }
+
+    #[test]
+    fn test_parse_curved_path_with_factor() {
+        let input = r#"
+        players = { p1 }
+        state = { }
+        action = {
+            move = {
+                p1 ~[l:0.5]> (10, 10),
+                p1 ~[r:0.1]> (20, 20)
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let playbook = parser.parse().unwrap();
+
+        match playbook.action.moves[0].path_type {
+            PathType::Curve(CurveDirection::Left(f)) => assert_eq!(f, 0.5),
+            _ => panic!("Expected Left Curve with 0.5"),
+        }
+
+        match playbook.action.moves[1].path_type {
+            PathType::Curve(CurveDirection::Right(f)) => assert_eq!(f, 0.1),
+            _ => panic!("Expected Right Curve with 0.1"),
         }
     }
 }
