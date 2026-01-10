@@ -245,6 +245,32 @@ impl Parser {
         Ok(state)
     }
 
+    fn expect_arrow(&mut self) -> Result<PathType, ParseError> {
+        let token = self.peek();
+        match token.kind {
+            TokenKind::Arrow => {
+                self.advance();
+                Ok(PathType::Straight)
+            }
+            TokenKind::CurveArrow(ref s) => {
+                self.advance();
+                match s.as_str() {
+                    "default" => Ok(PathType::Curve(CurveDirection::Left)),
+                    "l" => Ok(PathType::Curve(CurveDirection::Left)),
+                    "r" => Ok(PathType::Curve(CurveDirection::Right)),
+                    _ => Err(ParseError::InvalidSyntax(format!(
+                        "Unknown curve direction: {}",
+                        s
+                    ))),
+                }
+            }
+            _ => Err(ParseError::UnexpectedToken(
+                token,
+                "Expected -> or ~>".to_string(),
+            )),
+        }
+    }
+
     fn parse_action_block(&mut self) -> Result<Action, ParseError> {
         let mut action = Action::default();
         while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
@@ -255,9 +281,13 @@ impl Parser {
                     self.expect(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
-                        self.expect(TokenKind::Arrow)?;
+                        let path_type = self.expect_arrow()?;
                         let target = self.parse_coordinate()?;
-                        action.moves.push(MoveAction { player, target });
+                        action.moves.push(MoveAction {
+                            player,
+                            target,
+                            path_type,
+                        });
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
                         }
@@ -271,8 +301,8 @@ impl Parser {
                     self.expect(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
-                        self.expect(TokenKind::Arrow)?;
-                        
+                        let path_type = self.expect_arrow()?;
+
                         let target = if self.peek().kind == TokenKind::LParenthesis {
                             let (x, y) = self.parse_coordinate()?;
                             ScreenTarget::Coordinate(x, y)
@@ -308,6 +338,7 @@ impl Parser {
                             player,
                             target,
                             timing,
+                            path_type,
                         });
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
@@ -464,6 +495,42 @@ mod tests {
                 assert_eq!(y, 15.0);
             }
             _ => panic!("Expected Coordinate target"),
+        }
+    }
+
+    #[test]
+    fn test_parse_curved_path() {
+        let input = r#"
+        players = { p1 }
+        state = { }
+        action = {
+            move = {
+                p1 ~[l]> (10, 10),
+                p1 ~[r]> (20, 20),
+                p1 ~> (30, 30)
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let playbook = parser.parse().unwrap();
+
+        assert_eq!(playbook.action.moves.len(), 3);
+
+        match playbook.action.moves[0].path_type {
+            PathType::Curve(CurveDirection::Left) => {}
+            _ => panic!("Expected Left Curve"),
+        }
+
+        match playbook.action.moves[1].path_type {
+            PathType::Curve(CurveDirection::Right) => {}
+            _ => panic!("Expected Right Curve"),
+        }
+
+        match playbook.action.moves[2].path_type {
+            PathType::Curve(CurveDirection::Left) => {} // Default is Left
+            _ => panic!("Expected Default (Left) Curve"),
         }
     }
 }

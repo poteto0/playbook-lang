@@ -38,10 +38,17 @@ impl IRGenerator {
             let from = *start_positions
                 .get(&move_action.player)
                 .unwrap_or(&(0.0, 0.0));
+
+            let curve = match move_action.path_type {
+                crate::ast::PathType::Straight => None,
+                crate::ast::PathType::Curve(d) => Some(d),
+            };
+
             interactions.push(Interaction::Move(MoveLine {
                 player_id: move_action.player,
                 from,
                 to: move_action.target,
+                curve,
             }));
         }
 
@@ -82,10 +89,17 @@ impl IRGenerator {
                 },
                 crate::ast::ScreenTarget::Coordinate(x, y) => (*x, *y),
             };
+
+            let curve = match screen.path_type {
+                crate::ast::PathType::Straight => None,
+                crate::ast::PathType::Curve(d) => Some(d),
+            };
+
             interactions.push(Interaction::Screen(ScreenLine {
                 screener_id: screen.player,
                 from,
                 to,
+                curve,
             }));
         }
 
@@ -118,6 +132,7 @@ mod tests {
                 moves: vec![MoveAction {
                     player: "p2".to_string(),
                     target: (20.0, 20.0),
+                    path_type: PathType::Straight,
                 }],
                 passes: vec![PassAction {
                     from: "p1".to_string(),

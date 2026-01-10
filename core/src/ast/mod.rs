@@ -24,6 +24,7 @@ pub struct Action {
 pub struct MoveAction {
     pub player: String,
     pub target: (f64, f64),
+    pub path_type: PathType,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -37,6 +38,7 @@ pub struct ScreenAction {
     pub player: String,
     pub target: ScreenTarget,
     pub timing: Timing,
+    pub path_type: PathType,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -52,4 +54,16 @@ pub enum Timing {
     After,
     Middle,
     None, // Default if not specified
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum PathType {
+    Straight,
+    Curve(CurveDirection),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum CurveDirection {
+    Left,
+    Right,
 }

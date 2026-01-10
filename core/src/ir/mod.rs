@@ -1,4 +1,5 @@
 pub mod generator;
+use crate::ast::CurveDirection;
 pub use generator::IRGenerator;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -28,6 +29,7 @@ pub struct MoveLine {
     pub player_id: String,
     pub from: (f64, f64),
     pub to: (f64, f64),
+    pub curve: Option<CurveDirection>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -41,6 +43,7 @@ pub struct ScreenLine {
     pub screener_id: String,
     pub from: (f64, f64),
     pub to: (f64, f64),
+    pub curve: Option<CurveDirection>,
 }
 
 pub fn is_baller(players: &Vec<Entity>, player_id: &String) -> bool {

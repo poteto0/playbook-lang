@@ -88,10 +88,42 @@ impl Renderer {
     }
 
     fn render_move(&self, m: &MoveLine) -> String {
-        format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />",
-            m.from.0, m.from.1, m.to.0, m.to.1
-        )
+        match &m.curve {
+            Some(dir) => {
+                let (cx, cy) = self.calculate_control_point(m.from, m.to, dir);
+                format!(
+                    "<path d=\"M {} {} Q {} {} {} {}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\" marker-end=\"url(#arrowhead)\" />",
+                    m.from.0, m.from.1, cx, cy, m.to.0, m.to.1
+                )
+            }
+            None => {
+                format!(
+                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />",
+                    m.from.0, m.from.1, m.to.0, m.to.1
+                )
+            }
+        }
+    }
+
+    fn calculate_control_point(
+        &self,
+        from: (f64, f64),
+        to: (f64, f64),
+        dir: &crate::ast::CurveDirection,
+    ) -> (f64, f64) {
+        let dx = to.0 - from.0;
+        let dy = to.1 - from.1;
+        let mid_x = (from.0 + to.0) / 2.0;
+        let mid_y = (from.1 + to.1) / 2.0;
+
+        let factor = 0.3;
+
+        let (nx, ny) = match dir {
+            crate::ast::CurveDirection::Left => (dy, -dx),
+            crate::ast::CurveDirection::Right => (-dy, dx),
+        };
+
+        (mid_x + nx * factor, mid_y + ny * factor)
     }
 
     fn render_pass(&self, p: &PassLine) -> String {
@@ -133,10 +165,21 @@ impl Renderer {
 
         let mut svg = String::new();
         // Draw the movement line (stem) to the shifted center
-        svg.push_str(&format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
-            s.from.0, s.from.1, cx, cy
-        ));
+        match &s.curve {
+            Some(dir) => {
+                let (cpx, cpy) = self.calculate_control_point(s.from, (cx, cy), dir);
+                svg.push_str(&format!(
+                    "<path d=\"M {} {} Q {} {} {} {}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\" />",
+                    s.from.0, s.from.1, cpx, cpy, cx, cy
+                ));
+            }
+            None => {
+                svg.push_str(&format!(
+                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
+                    s.from.0, s.from.1, cx, cy
+                ));
+            }
+        }
 
         // Draw the perpendicular bar
         svg.push_str(&format!(

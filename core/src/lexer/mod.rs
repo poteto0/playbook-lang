@@ -32,14 +32,15 @@ pub enum TokenKind {
     Number(f64), // Coordinates can be numbers
 
     // Symbols
-    Equals,       // =
-    LBrace,       // {
-    RBrace,       // }
-    LParenthesis, // (
-    RParenthesis, // )
-    Comma,        // ,
-    Arrow,        // ->
-    Colon,        // :
+    Equals,             // =
+    LBrace,             // {
+    RBrace,             // }
+    LParenthesis,       // (
+    RParenthesis,       // )
+    Comma,              // ,
+    Arrow,              // ->
+    CurveArrow(String), // ~> (default), ~[left]>, ~[right]>
+    Colon,              // :
 
     // Special
     Comment(String),
@@ -202,6 +203,27 @@ impl<'a> Lexer<'a> {
                         self.advance();
                         TokenKind::Identifier("-".to_string())
                     }
+                }
+            }
+            '~' => {
+                if self.starts_with("~>") {
+                    self.advance();
+                    self.advance();
+                    TokenKind::CurveArrow("default".to_string())
+                } else if self.starts_with("~[") {
+                    self.advance(); // ~
+                    self.advance(); // [
+                    let dir = self.read_identifier();
+                    if self.starts_with("]>") {
+                        self.advance();
+                        self.advance();
+                        TokenKind::CurveArrow(dir)
+                    } else {
+                        TokenKind::Identifier(format!("~[{}]", dir))
+                    }
+                } else {
+                    self.advance();
+                    TokenKind::Identifier("~".to_string())
                 }
             }
             '/' => {
