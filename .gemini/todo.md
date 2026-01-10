@@ -14,3 +14,8 @@
 - [x] Update Parser to parse `dir:factor` string
 - [x] Update IR and Renderer to use dynamic factor
 - [x] Test new syntax
+
+## Validation Enhancement
+- [x] Lexer: Add `TokenKind::Error` and improve `read_inside_brackets` robustness (check unclosed bracket/newline)
+- [x] Parser: Add length check for curve factor (max 3 chars)
+- [x] Parser: Handle `TokenKind::Error` in `expect_arrow`

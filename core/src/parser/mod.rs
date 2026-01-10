@@ -264,8 +264,15 @@ impl Parser {
                 let parts: Vec<&str> = s.split(':').collect();
                 let dir_str = parts[0];
                 let factor = if parts.len() > 1 {
-                    parts[1].parse::<f64>().map_err(|_| {
-                        ParseError::InvalidSyntax(format!("Invalid curve factor: {}", parts[1]))
+                    let factor_str = parts[1];
+                    if factor_str.len() > 3 {
+                        return Err(ParseError::InvalidSyntax(format!(
+                            "Curve factor must be at most 3 characters (e.g. 0.5): {}",
+                            factor_str
+                        )));
+                    }
+                    factor_str.parse::<f64>().map_err(|_| {
+                        ParseError::InvalidSyntax(format!("Invalid curve factor: {}", factor_str))
                     })?
                 } else {
                     DEFAULT_BEZIER_CURVE_FACTOR
@@ -279,6 +286,10 @@ impl Parser {
                         dir_str
                     ))),
                 }
+            }
+            TokenKind::Error(ref msg) => {
+                let token = self.peek();
+                Err(ParseError::UnexpectedToken(token, msg.clone()))
             }
             _ => Err(ParseError::UnexpectedToken(
                 token,
@@ -575,6 +586,46 @@ mod tests {
         match playbook.action.moves[1].path_type {
             PathType::Curve(CurveDirection::Right(f)) => assert_eq!(f, 0.1),
             _ => panic!("Expected Right Curve with 0.1"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_curve_factor_length() {
+        let input = r#"
+        players = { p1 }
+        state = { }
+        action = {
+            move = {
+                p1 ~[l:0.15]> (10, 10)
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let result = parser.parse();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ParseError::InvalidSyntax(msg) => {
+                assert!(msg.contains("Curve factor must be at most 3 characters"));
+            }
+            _ => panic!("Expected InvalidSyntax error"),
+        }
+    }
+
+    #[test]
+    fn test_lexer_unclosed_bracket() {
+        let input = "p1 ~[l:0.5 (10, 10)";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        // Should produce Identifier(p1) -> Error(Unclosed bracket)
+        // actually next_token skip_whitespace calls advance, so...
+        // tokens[0] is p1
+        // tokens[1] is Error
+        assert_eq!(tokens[0].kind, TokenKind::Identifier("p1".to_string()));
+        match &tokens[1].kind {
+            TokenKind::Error(msg) => assert_eq!(msg, "Unclosed bracket"),
+            _ => panic!("Expected Error token, found {:?}", tokens[1].kind),
         }
     }
 }

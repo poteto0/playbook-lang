@@ -45,6 +45,7 @@ pub enum TokenKind {
     // Special
     Comment(String),
     EOF,
+    Error(String),
 }
 
 pub struct Lexer<'a> {
@@ -133,15 +134,18 @@ impl<'a> Lexer<'a> {
         self.input[start..self.pos].trim().to_string()
     }
 
-    fn read_inside_brackets(&mut self) -> String {
+    fn read_inside_brackets(&mut self) -> Result<String, String> {
         let start = self.pos;
         while let Some(c) = self.peek() {
             if c == ']' {
-                break;
+                return Ok(self.input[start..self.pos].to_string());
+            }
+            if c == '\n' {
+                return Err("Unexpected newline in curve parameters".to_string());
             }
             self.advance();
         }
-        self.input[start..self.pos].to_string()
+        Err("Unclosed bracket".to_string())
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -224,13 +228,19 @@ impl<'a> Lexer<'a> {
                 } else if self.starts_with("~[") {
                     self.advance(); // ~
                     self.advance(); // [
-                    let content = self.read_inside_brackets();
-                    if self.starts_with("]>") {
-                        self.advance(); // ]
-                        self.advance(); // >
-                        TokenKind::CurveArrow(content)
-                    } else {
-                        TokenKind::Identifier(format!("~[{}]", content))
+                    match self.read_inside_brackets() {
+                        Ok(content) => {
+                            if self.starts_with("]>") {
+                                self.advance(); // ]
+                                self.advance(); // >
+                                TokenKind::CurveArrow(content)
+                            } else {
+                                TokenKind::Error(
+                                    "Expected ]> after curve parameters".to_string(),
+                                )
+                            }
+                        }
+                        Err(msg) => TokenKind::Error(msg),
                     }
                 } else {
                     self.advance();
