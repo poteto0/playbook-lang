@@ -68,16 +68,19 @@ impl IRGenerator {
         // Screens
         for screen in playbook.action.screens {
             let from = *start_positions.get(&screen.player).unwrap_or(&(0.0, 0.0));
-            let to = match screen.timing {
-                Timing::Before => *start_positions.get(&screen.target).unwrap_or(&(0.0, 0.0)),
-                Timing::Middle => {
-                    let start = *start_positions.get(&screen.target).unwrap_or(&(0.0, 0.0));
-                    let end = *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0));
-                    ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
-                }
-                Timing::After | Timing::None => {
-                    *end_positions.get(&screen.target).unwrap_or(&(0.0, 0.0))
-                }
+            let to = match &screen.target {
+                crate::ast::ScreenTarget::Player(target_id) => match screen.timing {
+                    Timing::Before => *start_positions.get(target_id).unwrap_or(&(0.0, 0.0)),
+                    Timing::Middle => {
+                        let start = *start_positions.get(target_id).unwrap_or(&(0.0, 0.0));
+                        let end = *end_positions.get(target_id).unwrap_or(&(0.0, 0.0));
+                        ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
+                    }
+                    Timing::After | Timing::None => {
+                        *end_positions.get(target_id).unwrap_or(&(0.0, 0.0))
+                    }
+                },
+                crate::ast::ScreenTarget::Coordinate(x, y) => (*x, *y),
             };
             interactions.push(Interaction::Screen(ScreenLine {
                 screener_id: screen.player,

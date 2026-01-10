@@ -212,13 +212,19 @@ mod tests {
         let renderer = Renderer::new();
         let input = r#"            players = { p1, p2 }
             state = { baller = p1, position = { p1 = (0, 0), p2 = (50, 50) } }
-            action = { move = { p2 -> (0, 50) } }
+            action = { 
+                move = { p2 -> (0, 50) },
+                screen = { p1 -> (25, 25) }
+            }
         "#;
         let output = renderer.render(input).expect("Failed to render");
         assert!(output.contains("<svg"));
         assert!(output.contains("circle"));
         assert!(output.contains(">1<"));
         assert!(output.contains(">2<"));
+        // Check for screen rendering elements (perpendicular bar)
+        // Screen rendering uses black stroke width 2 lines
+        assert!(output.contains("stroke=\"black\" stroke-width=\"2\""));
     }
 
     #[test]

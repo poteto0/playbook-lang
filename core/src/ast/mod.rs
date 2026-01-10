@@ -27,9 +27,15 @@ pub struct MoveAction {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum ScreenTarget {
+    Player(String),
+    Coordinate(f64, f64),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct ScreenAction {
     pub player: String,
-    pub target: String,
+    pub target: ScreenTarget,
     pub timing: Timing,
 }
 

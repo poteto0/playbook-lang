@@ -1,0 +1,13 @@
+players = { p1, p2 }
+state = {
+    baller = p2,
+    position = {
+        p1 = (10, 10)
+        p2 = (50, 20)
+    },
+}
+action = {
+    screen = {
+        p1 -> (40, 20)
+    },
+}

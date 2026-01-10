@@ -272,7 +272,14 @@ impl Parser {
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
                         self.expect(TokenKind::Arrow)?;
-                        let target = self.expect_identifier()?;
+                        
+                        let target = if self.peek().kind == TokenKind::LParenthesis {
+                            let (x, y) = self.parse_coordinate()?;
+                            ScreenTarget::Coordinate(x, y)
+                        } else {
+                            ScreenTarget::Player(self.expect_identifier()?)
+                        };
+
                         let mut timing = Timing::None;
                         if self.peek().kind == TokenKind::Colon {
                             self.advance();
@@ -425,5 +432,38 @@ mod tests {
         assert_eq!(levenshtein("kitten", "sitting"), 3);
         assert_eq!(levenshtein("action", "aciton"), 2);
         assert_eq!(levenshtein("pass", "pas"), 1);
+    }
+
+    #[test]
+    fn test_parse_screen_with_coordinate() {
+        let input = r#"
+        players = { p1, p2 }
+        state = {
+            baller = p1,
+            position = {
+                p1 = (0, 0)
+                p2 = (10, 20)
+            },
+        }
+        action = {
+            screen = {
+                p1 -> (15, 15)
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let playbook = parser.parse().unwrap();
+
+        assert_eq!(playbook.action.screens.len(), 1);
+        assert_eq!(playbook.action.screens[0].player, "p1");
+        match playbook.action.screens[0].target {
+            ScreenTarget::Coordinate(x, y) => {
+                assert_eq!(x, 15.0);
+                assert_eq!(y, 15.0);
+            }
+            _ => panic!("Expected Coordinate target"),
+        }
     }
 }
