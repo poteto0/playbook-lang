@@ -13,12 +13,12 @@ state = {
 
 action = {
   move = {
-    p2 -> (70, 20),
+    p2 ~> (70, 20),
     p3 -> (0, -80),
   },
   screen = {
     p4 -> p2:middle,
-    p5 -> p3:middle,
+    p5 ~[r]> (-60, -80)
   },
   pass = {
     p1 -> p2:after,
