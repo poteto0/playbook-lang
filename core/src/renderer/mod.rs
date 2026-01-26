@@ -24,10 +24,11 @@ impl Renderer {
         svg.push_str(&self.render_court());
 
         // 1. Draw Interactions
-        for interaction in &scene.interactions {
+        for (i, interaction) in scene.interactions.iter().enumerate() {
             match interaction {
                 Interaction::Move(m) => {
-                    svg.push_str(&self.render_move(m));
+                    let is_last = self.is_last_move(scene, i, &m.player_id);
+                    svg.push_str(&self.render_move(m, is_last));
                 }
                 Interaction::Pass(p) => {
                     svg.push_str(&self.render_pass(p));
@@ -87,19 +88,24 @@ impl Renderer {
         court
     }
 
-    fn render_move(&self, m: &MoveLine) -> String {
+    fn render_move(&self, m: &MoveLine, is_drawing_arrow: bool) -> String {
+        let marker = if is_drawing_arrow {
+            " marker-end=\"url(#arrowhead)\""
+        } else {
+            ""
+        };
         match &m.curve {
             Some(dir) => {
                 let (cx, cy) = self.calculate_control_point(m.from, m.to, dir);
                 format!(
-                    "<path d=\"M {} {} Q {} {} {} {}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\" marker-end=\"url(#arrowhead)\" />",
-                    m.from.0, m.from.1, cx, cy, m.to.0, m.to.1
+                    "<path d=\"M {} {} Q {} {} {} {}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"{} />",
+                    m.from.0, m.from.1, cx, cy, m.to.0, m.to.1, marker
                 )
             }
             None => {
                 format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />",
-                    m.from.0, m.from.1, m.to.0, m.to.1
+                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
+                    m.from.0, m.from.1, m.to.0, m.to.1, marker
                 )
             }
         }
@@ -163,7 +169,7 @@ impl Renderer {
         let by2 = cy + py * half_bar;
 
         let mut svg = String::new();
-        // Draw the movement line (stem) to the shifted center
+
         match &s.curve {
             Some(dir) => {
                 let (cpx, cpy) = self.calculate_control_point(s.from, (cx, cy), dir);
@@ -189,25 +195,32 @@ impl Renderer {
         svg
     }
 
+    fn is_last_move(&self, scene: &Scene, current_idx: usize, player_id: &str) -> bool {
+        for i in (current_idx + 1)..scene.interactions.len() {
+            match &scene.interactions[i] {
+                Interaction::Move(m) if m.player_id == player_id => return false,
+                Interaction::Screen(s) if s.screener_id == player_id => return false,
+                _ => {}
+            }
+        }
+        true
+    }
+
     fn render_player(&self, entity: &Entity) -> String {
         let mut player = String::new();
         player.push_str(&format!(
-                "<circle cx=\"{}\" cy=\"{}\" r=\"8\" fill=\"white\" stroke=\"gray\" stroke-width=\"1\" opacity=\"0.3\" />",
+                "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
                 entity.start_pos.0, entity.start_pos.1
             ));
         player.push_str(&format!(
-                "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
-                entity.end_pos.0, entity.end_pos.1
-            ));
-        player.push_str(&format!(
                 "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
-                entity.end_pos.0, entity.end_pos.1, entity.label
+                entity.start_pos.0, entity.start_pos.1, entity.label
             ));
 
         if entity.is_baller {
             player.push_str(&format!(
                     "<circle cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"orange\" stroke=\"black\" stroke-width=\"1\" transform=\"translate(10, -10)\" />",
-                    entity.end_pos.0, entity.end_pos.1
+                    entity.start_pos.0, entity.start_pos.1
                 ));
         }
 
@@ -264,8 +277,15 @@ mod tests {
         let output = renderer.render(input).expect("Failed to render");
         assert!(output.contains("<svg"));
         assert!(output.contains("circle"));
-        assert!(output.contains(">1<"));
+        // Player 2 is at (50, 50) initially, moved to (0, 50).
+        // Label should be at start_pos (50, 50) now.
+        assert!(output.contains("x=\"50\" y=\"50\""));
         assert!(output.contains(">2<"));
+        // Player 1 is at (0, 0) and is baller.
+        assert!(output.contains("x=\"0\" y=\"0\""));
+        assert!(output.contains(">1<"));
+        // Ball (orange circle) should be at p1's start_pos (0, 0)
+        assert!(output.contains("fill=\"orange\""));
         // Check for screen rendering elements (perpendicular bar)
         // Screen rendering uses black stroke width 2 lines
         assert!(output.contains("stroke=\"black\" stroke-width=\"2\""));

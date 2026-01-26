@@ -104,10 +104,12 @@ impl IRGenerator {
         }
 
         // 3. Create Entities with final state
+        // entities for drawing
+        let initial_baller = playbook.state.baller.as_ref();
         for player_id in playbook.players {
             let start_pos = *initial_positions.get(&player_id).unwrap_or(&(0.0, 0.0));
             let end_pos = *current_positions.get(&player_id).unwrap_or(&start_pos);
-            let is_baller = current_baller.as_ref() == Some(&player_id);
+            let is_baller = initial_baller == Some(&player_id);
 
             entities.push(Entity {
                 id: player_id.clone(),
@@ -161,9 +163,11 @@ mod tests {
         let scene = IRGenerator::generate(playbook).unwrap();
 
         assert_eq!(scene.entities.len(), 2);
+        let p1_entity = scene.entities.iter().find(|e| e.id == "p1").unwrap();
         let p2_entity = scene.entities.iter().find(|e| e.id == "p2").unwrap();
         assert_eq!(p2_entity.start_pos, (10.0, 10.0));
         assert_eq!(p2_entity.end_pos, (20.0, 20.0));
+        assert!(p1_entity.is_baller);
 
         // Pass should go to p2's end_pos because timing is After
         if let Interaction::Pass(pass) = &scene.interactions[1] {
@@ -239,6 +243,9 @@ mod tests {
 
         let scene = IRGenerator::generate(playbook).unwrap();
 
+        let p1_entity = scene.entities.iter().find(|e| e.id == "p1").unwrap();
+        assert!(p1_entity.is_baller);
+
         // Should have 2 moves for p1 and 1 pass
         assert_eq!(scene.interactions.len(), 3);
 
@@ -267,5 +274,45 @@ mod tests {
         } else {
             panic!("Expected Pass interaction");
         }
+    }
+
+    #[test]
+    fn test_sequential_passes() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 0.0));
+        positions.insert("p2".to_string(), (10.0, 10.0));
+        positions.insert("p3".to_string(), (20.0, 20.0));
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string(), "p2".to_string(), "p3".to_string()],
+            state: State {
+                baller: Some("p1".to_string()),
+                positions,
+            },
+            actions: vec![Action {
+                passes: vec![
+                    PassAction {
+                        from: "p1".to_string(),
+                        to: "p2".to_string(),
+                        timing: Timing::None,
+                    },
+                    PassAction {
+                        from: "p2".to_string(),
+                        to: "p3".to_string(),
+                        timing: Timing::None,
+                    },
+                ],
+                ..Default::default()
+            }],
+        };
+
+        let scene = IRGenerator::generate(playbook).expect("Sequential passes should work");
+        assert_eq!(scene.interactions.len(), 2);
+
+        // Even after multiple passes, initial baller for rendering is p1
+        let p1_entity = scene.entities.iter().find(|e| e.id == "p1").unwrap();
+        let p2_entity = scene.entities.iter().find(|e| e.id == "p2").unwrap();
+        assert!(p1_entity.is_baller);
+        assert!(!p2_entity.is_baller);
     }
 }

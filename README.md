@@ -41,7 +41,7 @@ actions = [
   action = {
     move = {
       p5 -> (-20, 40),
-    }
+    },
   },
 
   action = {
