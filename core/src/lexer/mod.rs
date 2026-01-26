@@ -20,6 +20,7 @@ pub enum TokenKind {
     Baller,
     Position,
     Action,
+    Actions,
     Move,
     Screen,
     Pass,
@@ -35,6 +36,8 @@ pub enum TokenKind {
     Equals,             // =
     LBrace,             // {
     RBrace,             // }
+    LBracket,           // [
+    RBracket,           // ]
     LParenthesis,       // (
     RParenthesis,       // )
     Comma,              // ,
@@ -46,6 +49,41 @@ pub enum TokenKind {
     Comment(String),
     EOF,
     Error(String),
+}
+
+impl TokenKind {
+    pub fn to_string(&self) -> String {
+        match self {
+            TokenKind::Players => "players".to_string(),
+            TokenKind::State => "state".to_string(),
+            TokenKind::Baller => "baller".to_string(),
+            TokenKind::Position => "position".to_string(),
+            TokenKind::Action => "action".to_string(),
+            TokenKind::Actions => "actions".to_string(),
+            TokenKind::Move => "move".to_string(),
+            TokenKind::Screen => "screen".to_string(),
+            TokenKind::Pass => "pass".to_string(),
+            TokenKind::Before => "before".to_string(),
+            TokenKind::After => "after".to_string(),
+            TokenKind::Middle => "middle".to_string(),
+            TokenKind::Identifier(s) => s.clone(),
+            TokenKind::Number(n) => n.to_string(),
+            TokenKind::Equals => "=".to_string(),
+            TokenKind::LBrace => "{".to_string(),
+            TokenKind::RBrace => "}".to_string(),
+            TokenKind::LBracket => "[".to_string(),
+            TokenKind::RBracket => "]".to_string(),
+            TokenKind::LParenthesis => "(".to_string(),
+            TokenKind::RParenthesis => ")".to_string(),
+            TokenKind::Comma => ",".to_string(),
+            TokenKind::Arrow => "->".to_string(),
+            TokenKind::CurveArrow(_) => "~>".to_string(),
+            TokenKind::Colon => ":".to_string(),
+            TokenKind::Comment(s) => format!("// {}", s),
+            TokenKind::EOF => "EOF".to_string(),
+            TokenKind::Error(s) => s.clone(),
+        }
+    }
 }
 
 pub struct Lexer<'a> {
@@ -183,6 +221,14 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 TokenKind::RBrace
             }
+            '[' => {
+                self.advance();
+                TokenKind::LBracket
+            }
+            ']' => {
+                self.advance();
+                TokenKind::RBracket
+            }
             '(' => {
                 self.advance();
                 TokenKind::LParenthesis
@@ -262,6 +308,7 @@ impl<'a> Lexer<'a> {
                     "baller" => TokenKind::Baller,
                     "position" => TokenKind::Position,
                     "action" => TokenKind::Action,
+                    "actions" => TokenKind::Actions,
                     "move" => TokenKind::Move,
                     "screen" => TokenKind::Screen,
                     "pass" => TokenKind::Pass,

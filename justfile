@@ -11,6 +11,9 @@ lint:
 test:
     @cargo test --workspace
 
+ut:
+    @cargo test --workspace
+
 build:
     @cargo build --workspace
 

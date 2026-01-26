@@ -254,10 +254,12 @@ mod tests {
         let renderer = Renderer::new();
         let input = r#"            players = { p1, p2 }
             state = { baller = p1, position = { p1 = (0, 0), p2 = (50, 50) } }
-            action = { 
-                move = { p2 -> (0, 50) },
-                screen = { p1 -> (25, 25) }
-            }
+            actions = [
+                action = { 
+                    move = { p2 -> (0, 50) },
+                    screen = { p1 -> (25, 25) }
+                }
+            ]
         "#;
         let output = renderer.render(input).expect("Failed to render");
         assert!(output.contains("<svg"));
@@ -276,8 +278,8 @@ mod tests {
         let output = renderer.render(input).unwrap_err();
         assert!(output.contains("Error"));
         // EOF handling is tricky to test specific line without knowing where EOF span lands,
-        // but it should contain "Error" and likely "Expected RBrace".
-        assert!(output.contains("Expected RBrace"));
+        // but it should contain "Error" and likely "Expected `}`".
+        assert!(output.contains("Expected `}`"));
     }
 
     #[test]

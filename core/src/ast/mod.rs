@@ -4,7 +4,7 @@ use std::collections::HashMap;
 pub struct Playbook {
     pub players: Vec<String>,
     pub state: State,
-    pub action: Action,
+    pub actions: Vec<Action>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]

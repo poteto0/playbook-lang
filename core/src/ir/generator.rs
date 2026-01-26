@@ -8,20 +8,106 @@ impl IRGenerator {
         let mut entities = Vec::new();
         let mut interactions = Vec::new();
 
-        // 1. Resolve positions
-        // Default end_pos to start_pos if no move is specified
-        let start_positions = playbook.state.positions.clone();
-        let mut end_positions = start_positions.clone();
+        let initial_positions = playbook.state.positions.clone();
+        let mut current_positions = initial_positions.clone();
+        let mut current_baller = playbook.state.baller.clone();
 
-        for move_action in &playbook.action.moves {
-            end_positions.insert(move_action.player.clone(), move_action.target);
+        for action in playbook.actions {
+            let phase_start_positions = current_positions.clone();
+            let mut phase_end_positions = phase_start_positions.clone();
+
+            // 1. Resolve end positions for this phase
+            for move_action in &action.moves {
+                phase_end_positions.insert(move_action.player.clone(), move_action.target);
+            }
+
+            // 2. Create Interactions for this phase
+            // Moves
+            for move_action in action.moves {
+                let from = *phase_start_positions
+                    .get(&move_action.player)
+                    .unwrap_or(&(0.0, 0.0));
+
+                let curve = match move_action.path_type {
+                    crate::ast::PathType::Straight => None,
+                    crate::ast::PathType::Curve(d) => Some(d),
+                };
+
+                interactions.push(Interaction::Move(MoveLine {
+                    player_id: move_action.player,
+                    from,
+                    to: move_action.target,
+                    curve,
+                }));
+            }
+
+            // Screens
+            for screen in action.screens {
+                let from = *phase_start_positions
+                    .get(&screen.player)
+                    .unwrap_or(&(0.0, 0.0));
+                let to = match &screen.target {
+                    crate::ast::ScreenTarget::Player(target_id) => match screen.timing {
+                        Timing::Before => {
+                            *phase_start_positions.get(target_id).unwrap_or(&(0.0, 0.0))
+                        }
+                        Timing::Middle => {
+                            let start =
+                                *phase_start_positions.get(target_id).unwrap_or(&(0.0, 0.0));
+                            let end = *phase_end_positions.get(target_id).unwrap_or(&(0.0, 0.0));
+                            ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
+                        }
+                        Timing::After | Timing::None => {
+                            *phase_end_positions.get(target_id).unwrap_or(&(0.0, 0.0))
+                        }
+                    },
+                    crate::ast::ScreenTarget::Coordinate(x, y) => (*x, *y),
+                };
+
+                let curve = match screen.path_type {
+                    crate::ast::PathType::Straight => None,
+                    crate::ast::PathType::Curve(d) => Some(d),
+                };
+
+                interactions.push(Interaction::Screen(ScreenLine {
+                    screener_id: screen.player,
+                    from,
+                    to,
+                    curve,
+                }));
+            }
+
+            // Passes
+            for pass in action.passes {
+                if current_baller.as_ref() != Some(&pass.from) {
+                    return Err(format!("Player {} does not have the ball", pass.from));
+                }
+
+                let from = *phase_end_positions.get(&pass.from).unwrap_or(&(0.0, 0.0));
+                let to = match pass.timing {
+                    Timing::Before => *phase_start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
+                    Timing::Middle => {
+                        let start = *phase_start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
+                        let end = *phase_end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
+                        ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
+                    }
+                    Timing::After | Timing::None => {
+                        *phase_end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0))
+                    }
+                };
+                interactions.push(Interaction::Pass(PassLine { from, to }));
+                current_baller = Some(pass.to.clone());
+            }
+
+            // Update current positions for the next phase
+            current_positions = phase_end_positions;
         }
 
-        // 2. Create Entities
+        // 3. Create Entities with final state
         for player_id in playbook.players {
-            let start_pos = *start_positions.get(&player_id).unwrap_or(&(0.0, 0.0));
-            let end_pos = *end_positions.get(&player_id).unwrap_or(&start_pos);
-            let is_baller = playbook.state.baller.as_ref() == Some(&player_id);
+            let start_pos = *initial_positions.get(&player_id).unwrap_or(&(0.0, 0.0));
+            let end_pos = *current_positions.get(&player_id).unwrap_or(&start_pos);
+            let is_baller = current_baller.as_ref() == Some(&player_id);
 
             entities.push(Entity {
                 id: player_id.clone(),
@@ -30,77 +116,6 @@ impl IRGenerator {
                 end_pos,
                 is_baller,
             });
-        }
-
-        // 3. Create Interactions
-        // Moves
-        for move_action in playbook.action.moves {
-            let from = *start_positions
-                .get(&move_action.player)
-                .unwrap_or(&(0.0, 0.0));
-
-            let curve = match move_action.path_type {
-                crate::ast::PathType::Straight => None,
-                crate::ast::PathType::Curve(d) => Some(d),
-            };
-
-            interactions.push(Interaction::Move(MoveLine {
-                player_id: move_action.player,
-                from,
-                to: move_action.target,
-                curve,
-            }));
-        }
-
-        // Passes
-        for pass in playbook.action.passes {
-            // check from is passer?
-            if !is_baller(&entities, &pass.from) {
-                return Err(format!("Player {} does not have the ball", pass.from));
-            }
-
-            let from = *end_positions.get(&pass.from).unwrap_or(&(0.0, 0.0)); // Ball moves after or during action
-            let to = match pass.timing {
-                Timing::Before => *start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
-                Timing::Middle => {
-                    let start = *start_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
-                    let end = *end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0));
-                    ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
-                }
-                Timing::After | Timing::None => *end_positions.get(&pass.to).unwrap_or(&(0.0, 0.0)),
-            };
-            interactions.push(Interaction::Pass(PassLine { from, to }));
-        }
-
-        // Screens
-        for screen in playbook.action.screens {
-            let from = *start_positions.get(&screen.player).unwrap_or(&(0.0, 0.0));
-            let to = match &screen.target {
-                crate::ast::ScreenTarget::Player(target_id) => match screen.timing {
-                    Timing::Before => *start_positions.get(target_id).unwrap_or(&(0.0, 0.0)),
-                    Timing::Middle => {
-                        let start = *start_positions.get(target_id).unwrap_or(&(0.0, 0.0));
-                        let end = *end_positions.get(target_id).unwrap_or(&(0.0, 0.0));
-                        ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
-                    }
-                    Timing::After | Timing::None => {
-                        *end_positions.get(target_id).unwrap_or(&(0.0, 0.0))
-                    }
-                },
-                crate::ast::ScreenTarget::Coordinate(x, y) => (*x, *y),
-            };
-
-            let curve = match screen.path_type {
-                crate::ast::PathType::Straight => None,
-                crate::ast::PathType::Curve(d) => Some(d),
-            };
-
-            interactions.push(Interaction::Screen(ScreenLine {
-                screener_id: screen.player,
-                from,
-                to,
-                curve,
-            }));
         }
 
         Ok(Scene {
@@ -128,7 +143,7 @@ mod tests {
                 baller: Some("p1".to_string()),
                 positions,
             },
-            action: Action {
+            actions: vec![Action {
                 moves: vec![MoveAction {
                     player: "p2".to_string(),
                     target: (20.0, 20.0),
@@ -140,7 +155,7 @@ mod tests {
                     timing: Timing::After,
                 }],
                 ..Default::default()
-            },
+            }],
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -170,18 +185,87 @@ mod tests {
                 baller: Some("p2".to_string()), // p2 has the ball
                 positions,
             },
-            action: Action {
+            actions: vec![Action {
                 passes: vec![PassAction {
                     from: "p1".to_string(), // p1 tries to pass
                     to: "p2".to_string(),
                     timing: Timing::After,
                 }],
                 ..Default::default()
-            },
+            }],
         };
 
         let result = IRGenerator::generate(playbook);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Player p1 does not have the ball");
+    }
+
+    #[test]
+    fn test_multiple_phases_ir() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 0.0));
+        positions.insert("p2".to_string(), (10.0, 10.0));
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string(), "p2".to_string()],
+            state: State {
+                baller: Some("p1".to_string()),
+                positions,
+            },
+            actions: vec![
+                Action {
+                    moves: vec![MoveAction {
+                        player: "p1".to_string(),
+                        target: (10.0, 0.0),
+                        path_type: PathType::Straight,
+                    }],
+                    ..Default::default()
+                },
+                Action {
+                    moves: vec![MoveAction {
+                        player: "p1".to_string(),
+                        target: (10.0, 10.0),
+                        path_type: PathType::Straight,
+                    }],
+                    passes: vec![PassAction {
+                        from: "p1".to_string(),
+                        to: "p2".to_string(),
+                        timing: Timing::After,
+                    }],
+                    ..Default::default()
+                },
+            ],
+        };
+
+        let scene = IRGenerator::generate(playbook).unwrap();
+
+        // Should have 2 moves for p1 and 1 pass
+        assert_eq!(scene.interactions.len(), 3);
+
+        // Phase 1 Move
+        if let Interaction::Move(m) = &scene.interactions[0] {
+            assert_eq!(m.player_id, "p1");
+            assert_eq!(m.from, (0.0, 0.0));
+            assert_eq!(m.to, (10.0, 0.0));
+        } else {
+            panic!("Expected Move interaction");
+        }
+
+        // Phase 2 Move
+        if let Interaction::Move(m) = &scene.interactions[1] {
+            assert_eq!(m.player_id, "p1");
+            assert_eq!(m.from, (10.0, 0.0)); // From Phase 1 end
+            assert_eq!(m.to, (10.0, 10.0));
+        } else {
+            panic!("Expected Move interaction");
+        }
+
+        // Pass
+        if let Interaction::Pass(p) = &scene.interactions[2] {
+            assert_eq!(p.from, (10.0, 10.0));
+            assert_eq!(p.to, (10.0, 10.0)); // p2 stayed at (10, 10)
+        } else {
+            panic!("Expected Pass interaction");
+        }
     }
 }

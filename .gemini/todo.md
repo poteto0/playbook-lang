@@ -19,3 +19,12 @@
 - [x] Lexer: Add `TokenKind::Error` and improve `read_inside_brackets` robustness (check unclosed bracket/newline)
 - [x] Parser: Add length check for curve factor (max 3 chars)
 - [x] Parser: Handle `TokenKind::Error` in `expect_arrow`
+
+## Multiple Action Support
+- [x] Update Lexer to support `actions` keyword, `[` and `]` symbols
+- [x] Update AST to support `Vec<Action>` in `Playbook`
+- [x] Update Parser to handle `actions = [ action = { ... }, ... ]` and single `action = { ... }`
+- [x] Enforce max 3 actions in Parser
+- [x] Update IR Generator to process actions sequentially, tracking positions and baller state across phases
+- [x] Add unit tests for multiple action parsing and IR generation
+- [x] Verify full pipeline with multiple actions

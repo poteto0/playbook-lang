@@ -96,7 +96,7 @@ impl Parser {
         } else {
             Err(ParseError::UnexpectedToken(
                 token,
-                format!("Expected {:?}", expected_kind),
+                format!("Expected `{}`", expected_kind.to_string()),
             ))
         }
     }
@@ -151,7 +151,7 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Playbook, ParseError> {
         let mut players = Vec::new();
         let mut state = State::default();
-        let mut action = Action::default();
+        let mut actions = Vec::new();
 
         while self.peek().kind != TokenKind::EOF {
             match self.peek().kind {
@@ -180,16 +180,46 @@ impl Parser {
                     self.advance();
                     self.expect(TokenKind::Equals)?;
                     self.expect(TokenKind::LBrace)?;
-                    action = self.parse_action_block()?;
+                    let action = self.parse_action_block()?;
                     self.expect(TokenKind::RBrace)?;
+                    actions.push(action);
+                }
+                TokenKind::Actions => {
+                    self.advance();
+                    self.expect(TokenKind::Equals)?;
+                    self.expect(TokenKind::LBracket)?;
+                    while self.peek().kind != TokenKind::RBracket
+                        && self.peek().kind != TokenKind::EOF
+                    {
+                        self.expect(TokenKind::Action)?;
+                        self.expect(TokenKind::Equals)?;
+                        self.expect(TokenKind::LBrace)?;
+                        let action = self.parse_action_block()?;
+                        self.expect(TokenKind::RBrace)?;
+                        actions.push(action);
+
+                        if self.peek().kind == TokenKind::Comma {
+                            self.advance();
+                        }
+                    }
+                    self.expect(TokenKind::RBracket)?;
+
+                    if actions.len() > 3 {
+                        return Err(ParseError::InvalidSyntax(
+                            "Maximum of 3 actions allowed".to_string(),
+                        ));
+                    }
                 }
                 _ => {
                     let token = self.peek();
-                    let mut msg = "Expected section start (players, state, action)".to_string();
+                    let mut msg =
+                        "Expected section start (players, state, action, actions)".to_string();
                     let TokenKind::Identifier(ref s) = token.kind else {
                         return Err(ParseError::UnexpectedToken(token, msg));
                     };
-                    if let Some(sugg) = get_suggestion(s, &["players", "state", "action"]) {
+                    if let Some(sugg) =
+                        get_suggestion(s, &["players", "state", "action", "actions"])
+                    {
                         msg = format!("Expected section start. Did you mean '{}'?", sugg);
                     }
                     return Err(ParseError::UnexpectedToken(token, msg));
@@ -200,7 +230,7 @@ impl Parser {
         Ok(Playbook {
             players,
             state,
-            action,
+            actions,
         })
     }
 
@@ -472,14 +502,15 @@ mod tests {
         assert_eq!(playbook.state.positions.get("p1"), Some(&(0.0, 0.0)));
         assert_eq!(playbook.state.positions.get("p2"), Some(&(10.0, 20.0)));
 
-        assert_eq!(playbook.action.moves.len(), 1);
-        assert_eq!(playbook.action.moves[0].player, "p2");
-        assert_eq!(playbook.action.moves[0].target, (30.0, 40.0));
+        assert_eq!(playbook.actions.len(), 1);
+        assert_eq!(playbook.actions[0].moves.len(), 1);
+        assert_eq!(playbook.actions[0].moves[0].player, "p2");
+        assert_eq!(playbook.actions[0].moves[0].target, (30.0, 40.0));
 
-        assert_eq!(playbook.action.passes.len(), 1);
-        assert_eq!(playbook.action.passes[0].from, "p1");
-        assert_eq!(playbook.action.passes[0].to, "p2");
-        match playbook.action.passes[0].timing {
+        assert_eq!(playbook.actions[0].passes.len(), 1);
+        assert_eq!(playbook.actions[0].passes[0].from, "p1");
+        assert_eq!(playbook.actions[0].passes[0].to, "p2");
+        match playbook.actions[0].passes[0].timing {
             Timing::After => {}
             _ => panic!("Expected After timing"),
         }
@@ -514,9 +545,10 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let playbook = parser.parse().unwrap();
 
-        assert_eq!(playbook.action.screens.len(), 1);
-        assert_eq!(playbook.action.screens[0].player, "p1");
-        match playbook.action.screens[0].target {
+        assert_eq!(playbook.actions.len(), 1);
+        assert_eq!(playbook.actions[0].screens.len(), 1);
+        assert_eq!(playbook.actions[0].screens[0].player, "p1");
+        match playbook.actions[0].screens[0].target {
             ScreenTarget::Coordinate(x, y) => {
                 assert_eq!(x, 15.0);
                 assert_eq!(y, 15.0);
@@ -543,19 +575,20 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let playbook = parser.parse().unwrap();
 
-        assert_eq!(playbook.action.moves.len(), 3);
+        assert_eq!(playbook.actions.len(), 1);
+        assert_eq!(playbook.actions[0].moves.len(), 3);
 
-        match playbook.action.moves[0].path_type {
+        match playbook.actions[0].moves[0].path_type {
             PathType::Curve(CurveDirection::Left(DEFAULT_BEZIER_CURVE_FACTOR)) => {}
             _ => panic!("Expected Left Curve"),
         }
 
-        match playbook.action.moves[1].path_type {
+        match playbook.actions[0].moves[1].path_type {
             PathType::Curve(CurveDirection::Right(DEFAULT_BEZIER_CURVE_FACTOR)) => {}
             _ => panic!("Expected Right Curve"),
         }
 
-        match playbook.action.moves[2].path_type {
+        match playbook.actions[0].moves[2].path_type {
             PathType::Curve(CurveDirection::Left(DEFAULT_BEZIER_CURVE_FACTOR)) => {} // Default is Left
             _ => panic!("Expected Default (Left) Curve"),
         }
@@ -578,12 +611,12 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let playbook = parser.parse().unwrap();
 
-        match playbook.action.moves[0].path_type {
+        match playbook.actions[0].moves[0].path_type {
             PathType::Curve(CurveDirection::Left(f)) => assert_eq!(f, 0.5),
             _ => panic!("Expected Left Curve with 0.5"),
         }
 
-        match playbook.action.moves[1].path_type {
+        match playbook.actions[0].moves[1].path_type {
             PathType::Curve(CurveDirection::Right(f)) => assert_eq!(f, 0.1),
             _ => panic!("Expected Right Curve with 0.1"),
         }
@@ -627,5 +660,48 @@ mod tests {
             TokenKind::Error(msg) => assert_eq!(msg, "Unclosed bracket"),
             _ => panic!("Expected Error token, found {:?}", tokens[1].kind),
         }
+    }
+
+    #[test]
+    fn test_parse_multiple_actions() {
+        let input = r#"
+        players = { p1, p2 }
+        state = { position = { p1 = (0, 0), p2 = (10, 10) } }
+        actions = [
+            action = { move = { p1 -> (10, 0) } },
+            action = { move = { p1 -> (10, 10) } }
+        ]
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let playbook = parser.parse().unwrap();
+
+        assert_eq!(playbook.actions.len(), 2);
+        assert_eq!(playbook.actions[0].moves[0].target, (10.0, 0.0));
+        assert_eq!(playbook.actions[1].moves[0].target, (10.0, 10.0));
+    }
+
+    #[test]
+    fn test_parse_error_w_not_ending_actions() {
+        // Arrange
+        let input = r#"
+        players = { p1, p2 }
+        state = { position = { p1 = (0, 0), p2 = (10, 10) } }
+        actions = [
+            action = { move = { p1 -> (10, 0) } },
+            action = { move = { p1 -> (10, 10) } }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+
+        // Act & Assert
+        assert!(
+            parser
+                .parse()
+                .is_err_and(|e| matches!(e, ParseError::UnexpectedToken(
+            _, msg ) if msg.contains("Expected `]`")))
+        );
     }
 }
