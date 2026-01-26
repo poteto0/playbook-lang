@@ -37,19 +37,27 @@ state = {
   },
 }
 
-action = {
-  move = {
-    p2 ~> (70, 20),
-    p3 -> (0, -80),
+actions = [
+  action = {
+    move = {
+      p5 -> (-20, 40),
+    }
   },
-  screen = {
-    p4 -> p2:middle,
-    p5 ~[r]> (-60, -80)
-  },
-  pass = {
-    p1 -> p2:after,
-  },
-}
+
+  action = {
+    move = {
+      p2 ~> (70, 20),
+      p3 -> (0, -80),
+    },
+    screen = {
+      p4 -> p2:middle,
+      p5 ~[r]> (-60, -80)
+    },
+    pass = {
+      p1 -> p2:after,
+    },
+  }
+]
 ```
 
 ### 3 Run compile
