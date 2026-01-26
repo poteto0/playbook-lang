@@ -1,0 +1,19 @@
+players = { p1, p2 }
+
+state = {
+    baller = p1,
+    position = {
+        p1 = (0, 0)
+        p2 = (50, 0)
+    }
+}
+
+// Support multiple actions
+actions = [
+  action = {
+    move = { p1 -> (0, 40) }
+  },
+  action = {
+    pass = { p1 -> p2:after }
+  }
+]

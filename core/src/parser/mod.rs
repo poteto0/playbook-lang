@@ -155,6 +155,9 @@ impl Parser {
 
         while self.peek().kind != TokenKind::EOF {
             match self.peek().kind {
+                TokenKind::Comment(_) => {
+                    self.advance();
+                }
                 TokenKind::Players => {
                     self.advance(); // consume 'players'
                     self.expect(TokenKind::Equals)?;
