@@ -194,6 +194,10 @@ impl Parser {
                     while self.peek().kind != TokenKind::RBracket
                         && self.peek().kind != TokenKind::EOF
                     {
+                        if let TokenKind::Comment(_) = self.peek().kind {
+                            self.advance();
+                            continue;
+                        }
                         self.expect(TokenKind::Action)?;
                         self.expect(TokenKind::Equals)?;
                         self.expect(TokenKind::LBrace)?;

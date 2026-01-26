@@ -1,0 +1,28 @@
+players = { p1, p2 }
+
+state = {
+    baller = p1,
+    position = {
+        p1 = (0, 60)
+        p2 = (50, 60)
+    }
+}
+
+actions = [
+    // p1 dribbles
+    action = {
+        move = {
+            p1 -> (0, 0),
+            p2 -> (50, 0)
+        }
+    },
+    // p1 passes to p2, then p2 dribbles
+    action = {
+        pass = {
+            p1 -> p2:before
+        },
+        move = {
+            p2 -> (0, 0)
+        }
+    }
+]

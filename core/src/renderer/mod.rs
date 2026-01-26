@@ -88,12 +88,18 @@ impl Renderer {
         court
     }
 
-    fn render_move(&self, m: &MoveLine, is_drawing_arrow: bool) -> String {
-        let marker = if is_drawing_arrow {
+    fn render_move(&self, m: &MoveLine, draw_arrow: bool) -> String {
+        let marker = if draw_arrow {
             " marker-end=\"url(#arrowhead)\""
         } else {
             ""
         };
+
+        if m.is_dribble && m.curve.is_none() {
+            // Only support straight dribble for now
+            return self.render_dribble(m, draw_arrow);
+        }
+
         match &m.curve {
             Some(dir) => {
                 let (cx, cy) = self.calculate_control_point(m.from, m.to, dir);
@@ -109,6 +115,78 @@ impl Renderer {
                 )
             }
         }
+    }
+
+    fn render_dribble(&self, m: &MoveLine, draw_arrow: bool) -> String {
+        let dx = m.to.0 - m.from.0;
+        let dy = m.to.1 - m.from.1;
+        let dist = (dx * dx + dy * dy).sqrt();
+
+        if dist < 1.0 {
+            return "".to_string(); // Too short
+        }
+
+        // Normalize direction
+        let ux = dx / dist;
+        let uy = dy / dist;
+
+        // Perpendicular vector
+        let px = -uy;
+        let py = ux;
+
+        // Configuration
+        let margin_ratio = 0.1; // 10% linear segment at each end
+        let amplitude = 5.0; // Wider waves
+        let step_size = 5.0; // Smaller period (finer waves)
+
+        let start_wavy_dist = dist * margin_ratio;
+        let end_wavy_dist = dist * (1.0 - margin_ratio);
+        let wavy_dist = end_wavy_dist - start_wavy_dist;
+
+        let steps = (wavy_dist / step_size).ceil().max(2.0) as usize;
+
+        // Start with linear segment
+        let wavy_start_x = m.from.0 + ux * start_wavy_dist;
+        let wavy_start_y = m.from.1 + uy * start_wavy_dist;
+        let mut path_data = format!(
+            "M {} {} L {} {}",
+            m.from.0, m.from.1, wavy_start_x, wavy_start_y
+        );
+
+        // Wavy middle part
+        for i in 0..steps {
+            let t2 = (i as f64 + 0.5) / steps as f64;
+            let t3 = (i + 1) as f64 / steps as f64;
+
+            let mid_dist = start_wavy_dist + wavy_dist * t2;
+            let mid_x = m.from.0 + ux * mid_dist;
+            let mid_y = m.from.1 + uy * mid_dist;
+
+            // Wavy effect
+            let offset = if i % 2 == 0 { amplitude } else { -amplitude };
+            let cp_x = mid_x + px * offset;
+            let cp_y = mid_y + py * offset;
+
+            let end_dist = start_wavy_dist + wavy_dist * t3;
+            let end_x = m.from.0 + ux * end_dist;
+            let end_y = m.from.1 + uy * end_dist;
+
+            path_data.push_str(&format!(" Q {} {} {} {}", cp_x, cp_y, end_x, end_y));
+        }
+
+        // End with linear segment
+        path_data.push_str(&format!(" L {} {}", m.to.0, m.to.1));
+
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead)\""
+        } else {
+            ""
+        };
+
+        format!(
+            "<path d=\"{}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"{} />",
+            path_data, marker
+        )
     }
 
     /// Bezier curve

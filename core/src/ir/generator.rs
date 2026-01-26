@@ -33,11 +33,14 @@ impl IRGenerator {
                     crate::ast::PathType::Curve(d) => Some(d),
                 };
 
+                let is_dribble = current_baller.as_ref() == Some(&move_action.player);
+
                 interactions.push(Interaction::Move(MoveLine {
                     player_id: move_action.player,
                     from,
                     to: move_action.target,
                     curve,
+                    is_dribble,
                 }));
             }
 
@@ -254,6 +257,7 @@ mod tests {
             assert_eq!(m.player_id, "p1");
             assert_eq!(m.from, (0.0, 0.0));
             assert_eq!(m.to, (10.0, 0.0));
+            assert!(m.is_dribble); // p1 is baller
         } else {
             panic!("Expected Move interaction");
         }
@@ -263,6 +267,7 @@ mod tests {
             assert_eq!(m.player_id, "p1");
             assert_eq!(m.from, (10.0, 0.0)); // From Phase 1 end
             assert_eq!(m.to, (10.0, 10.0));
+            assert!(m.is_dribble); // p1 is still baller
         } else {
             panic!("Expected Move interaction");
         }
