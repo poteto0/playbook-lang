@@ -96,7 +96,7 @@ impl Parser {
         } else {
             Err(ParseError::UnexpectedToken(
                 token,
-                format!("Expected `{}`", expected_kind.to_string()),
+                format!("Expected `{}`", expected_kind),
             ))
         }
     }
