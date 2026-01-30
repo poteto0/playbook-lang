@@ -324,7 +324,7 @@ impl Renderer {
                     ParseError::UnexpectedToken(token, msg)
                     | ParseError::InvalidSyntax(token, msg) => {
                         format!(
-                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":{}}}",
+                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
                             token.span.line,
                             token.span.column,
                             token.span.len(),
