@@ -6,6 +6,16 @@ pub struct Span {
     pub column: usize,
 }
 
+impl Span {
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
