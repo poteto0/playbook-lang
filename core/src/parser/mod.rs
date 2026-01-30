@@ -687,7 +687,13 @@ mod tests {
         match result.unwrap_err() {
             ParseError::InvalidSyntax(token, msg) => {
                 assert!(msg.contains("Curve factor must be at most 3 characters"));
-                assert_token(&token, &TokenKind::CurveArrow("l:0.15".to_string()), 6, 20, "~[l:0.15]>".len());
+                assert_token(
+                    &token,
+                    &TokenKind::CurveArrow("l:0.15".to_string()),
+                    6,
+                    20,
+                    "~[l:0.15]>".len(),
+                );
             }
             _ => panic!("Expected InvalidSyntax error"),
         }

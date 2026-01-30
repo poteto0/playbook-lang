@@ -1,4 +1,4 @@
-use crate::ir::*;
+use crate::{ir::*, lexer::TokenKind};
 
 pub struct Renderer {
     width: u32,
@@ -321,19 +321,25 @@ impl Renderer {
             }
             Err(e) => {
                 let error_msg = match e {
-                    ParseError::UnexpectedToken(token, msg) => {
+                    ParseError::UnexpectedToken(token, msg)
+                    | ParseError::InvalidSyntax(token, msg) => {
                         format!(
-                            "Error at {{\"line\":{}, \"column\":{}, \"length\":{}}}: {} (found {:?})",
-                            token.span.line, token.span.column, token.span.len(), msg, token.kind
+                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":{}}}",
+                            token.span.line,
+                            token.span.column,
+                            token.span.len(),
+                            msg,
+                            token.kind
                         )
                     }
-                    ParseError::UnexpectedEOF => "Error: Unexpected End of File".to_string(),
-                    ParseError::InvalidSyntax(token, msg) => {
-                        format!(
-                            "Error at {{\"line\":{}, \"column\":{}, \"length\":{}}}: {} (found {:?})",
-                            token.span.line, token.span.column, token.span.len(), msg, token.kind
-                        )
-                    }
+                    ParseError::UnexpectedEOF => format!(
+                        "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":{}}}",
+                        0,
+                        0,
+                        0,
+                        "Unexpected end of file",
+                        TokenKind::EOF,
+                    ),
                 };
                 Err(error_msg)
             }
