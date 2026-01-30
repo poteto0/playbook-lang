@@ -496,10 +496,12 @@ mod tests {
         expected_kind: &TokenKind,
         expected_line: usize,
         expected_column: usize,
+        expected_length: usize,
     ) {
         assert_eq!(&token.kind, expected_kind);
         assert_eq!(token.span.line, expected_line);
         assert_eq!(token.span.column, expected_column);
+        assert_eq!(token.span.len(), expected_length);
     }
 
     #[test]
@@ -685,7 +687,7 @@ mod tests {
         match result.unwrap_err() {
             ParseError::InvalidSyntax(token, msg) => {
                 assert!(msg.contains("Curve factor must be at most 3 characters"));
-                assert_token(&token, &TokenKind::CurveArrow("l:0.15".to_string()), 6, 20);
+                assert_token(&token, &TokenKind::CurveArrow("l:0.15".to_string()), 6, 20, "~[l:0.15]>".len());
             }
             _ => panic!("Expected InvalidSyntax error"),
         }
@@ -752,7 +754,7 @@ mod tests {
         match result.unwrap_err() {
             ParseError::InvalidSyntax(token, msg) => {
                 assert!(msg.contains("Maximum of 3 actions allowed"));
-                assert_token(&token, &TokenKind::Action, 8, 13);
+                assert_token(&token, &TokenKind::Action, 8, 13, "action".len());
             }
             _ => panic!("Expected InvalidSyntax error"),
         }

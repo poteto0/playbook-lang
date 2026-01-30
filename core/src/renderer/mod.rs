@@ -323,15 +323,15 @@ impl Renderer {
                 let error_msg = match e {
                     ParseError::UnexpectedToken(token, msg) => {
                         format!(
-                            "Error at line {}, column {}: {} (found {:?})",
-                            token.span.line, token.span.column, msg, token.kind
+                            "Error at {{\"line\":{}, \"column\":{}, \"length\":{}}}: {} (found {:?})",
+                            token.span.line, token.span.column, token.span.len(), msg, token.kind
                         )
                     }
                     ParseError::UnexpectedEOF => "Error: Unexpected End of File".to_string(),
                     ParseError::InvalidSyntax(token, msg) => {
                         format!(
-                            "Error at line {}, column {}: {} (found {:?})",
-                            token.span.line, token.span.column, msg, token.kind
+                            "Error at {{\"line\":{}, \"column\":{}, \"length\":{}}}: {} (found {:?})",
+                            token.span.line, token.span.column, token.span.len(), msg, token.kind
                         )
                     }
                 };
