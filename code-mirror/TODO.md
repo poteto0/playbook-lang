@@ -1,0 +1,22 @@
+# Playbook-Lang CodeMirror 6 Extension TODO
+
+- [x] Project Initialization
+    - [x] `npm init`
+    - [x] Configure `tsconfig.json`
+    - [x] Install dependencies (CodeMirror, Lezer, TypeScript)
+    - [x] Install testing infrastructure (Vitest/Jest)
+- [x] Lezer Grammar Definition
+    - [x] Create `syntax.grammar`
+    - [x] Define tokens (keywords, identifiers, literals)
+    - [x] Define rules (expressions, statements)
+    - [x] Generate parser
+- [ ] Syntax Highlighting
+    - [ ] Define style tags
+    - [ ] Map grammar nodes to highlighting styles
+- [ ] Testing (TDD)
+    - [ ] Test tokenizer
+    - [ ] Test parser structure
+    - [ ] Test highlighting tags
+- [ ] Packaging
+    - [ ] Build configuration
+    - [ ] Export extension

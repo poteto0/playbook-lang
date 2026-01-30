@@ -1,0 +1,90 @@
+@top Program { TopLevel* }
+
+TopLevel {
+  Players |
+  State |
+  ActionBlock |
+  ActionsBlock |
+  expression
+}
+
+Players {
+  kw<"players"> "=" "{" IdentifierList? "}"
+}
+
+State {
+  kw<"state"> "=" "{" StateContent* "}"
+}
+
+StateContent {
+  BallerAssignment |
+  PositionAssignment
+}
+
+BallerAssignment {
+  kw<"baller"> "=" Identifier ","?
+}
+
+PositionAssignment {
+  kw<"position"> "=" "{" PositionEntry* "}" ","?
+}
+
+PositionEntry {
+  Identifier "=" Coordinate ","?
+}
+
+Coordinate {
+  "(" Number "," Number ")"
+}
+
+ActionBlock {
+  kw<"action"> "=" "{" ActionDefinition "}"
+}
+
+ActionsBlock {
+  kw<"actions"> "=" "[" (ActionBlock ","?)* "]"
+}
+
+ActionDefinition {
+  ActionType "=" "{" ActionBody "}"
+}
+
+ActionType {
+  kw<"move"> | kw<"pass"> | kw<"screen">
+}
+
+ActionBody {
+  (Identifier | Coordinate) Arrow (Identifier | Coordinate) (":" Timing)? ","?
+}
+
+Timing {
+  kw<"before"> | kw<"after"> | kw<"middle">
+}
+
+Arrow {
+  "->" | "~>" | CurveArrow
+}
+
+IdentifierList {
+  Identifier ("," Identifier)* ","?
+}
+
+expression {
+  Identifier | Number
+}
+
+kw<term> { @specialize[@name={term}]<Identifier, term> }
+
+@skip { space | LineComment }
+
+@tokens {
+  space { @whitespace+ }
+  LineComment { "//" ![\n]* }
+
+  Identifier { $[a-zA-Z_] $[a-zA-Z0-9_]* }
+  Number { "-"? @digit+ ("." @digit+)? }
+  CurveArrow { "~" "[" ![\n\]]* "]" ">" }
+  
+  "{" "}" "[" "]" "(" ")" "=" "," ":" "->" "~>"
+}
+
