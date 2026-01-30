@@ -6,7 +6,7 @@ use crate::lexer::{Span, Token, TokenKind};
 pub enum ParseError {
     UnexpectedToken(Token, String),
     UnexpectedEOF,
-    InvalidSyntax(String),
+    InvalidSyntax(Token, String),
 }
 
 pub struct Parser {
@@ -91,6 +91,18 @@ impl Parser {
     fn expect(&mut self, expected_kind: TokenKind) -> Result<(), ParseError> {
         let token = self.peek();
         if std::mem::discriminant(&token.kind) == std::mem::discriminant(&expected_kind) {
+            Ok(())
+        } else {
+            Err(ParseError::UnexpectedToken(
+                token,
+                format!("Expected `{}`", expected_kind),
+            ))
+        }
+    }
+
+    fn expect_and_advance(&mut self, expected_kind: TokenKind) -> Result<(), ParseError> {
+        let token = self.peek();
+        if std::mem::discriminant(&token.kind) == std::mem::discriminant(&expected_kind) {
             self.advance();
             Ok(())
         } else {
@@ -122,7 +134,7 @@ impl Parser {
     }
 
     fn parse_coordinate(&mut self) -> Result<(f64, f64), ParseError> {
-        self.expect(TokenKind::LParenthesis)?;
+        self.expect_and_advance(TokenKind::LParenthesis)?;
         let token = self.advance();
         let x = match token.kind {
             TokenKind::Number(n) => n,
@@ -133,7 +145,7 @@ impl Parser {
                 ));
             }
         };
-        self.expect(TokenKind::Comma)?;
+        self.expect_and_advance(TokenKind::Comma)?;
         let token = self.advance();
         let y = match token.kind {
             TokenKind::Number(n) => n,
@@ -144,7 +156,7 @@ impl Parser {
                 ));
             }
         };
-        self.expect(TokenKind::RParenthesis)?;
+        self.expect_and_advance(TokenKind::RParenthesis)?;
         Ok((x, y))
     }
 
@@ -160,8 +172,8 @@ impl Parser {
                 }
                 TokenKind::Players => {
                     self.advance(); // consume 'players'
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace
                         && self.peek().kind != TokenKind::EOF
                     {
@@ -170,27 +182,27 @@ impl Parser {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                 }
                 TokenKind::State => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     state = self.parse_state_block()?;
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                 }
                 TokenKind::Action => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     let action = self.parse_action_block()?;
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                     actions.push(action);
                 }
                 TokenKind::Actions => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBracket)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBracket)?;
                     while self.peek().kind != TokenKind::RBracket
                         && self.peek().kind != TokenKind::EOF
                     {
@@ -198,24 +210,28 @@ impl Parser {
                             self.advance();
                             continue;
                         }
+
                         self.expect(TokenKind::Action)?;
-                        self.expect(TokenKind::Equals)?;
-                        self.expect(TokenKind::LBrace)?;
+                        if actions.len() >= 3 {
+                            return Err(ParseError::InvalidSyntax(
+                                self.peek().clone(),
+                                "Maximum of 3 actions allowed".to_string(),
+                            ));
+                        }
+
+                        self.advance(); // consume 'action'
+                        self.expect_and_advance(TokenKind::Equals)?;
+                        self.expect_and_advance(TokenKind::LBrace)?;
                         let action = self.parse_action_block()?;
-                        self.expect(TokenKind::RBrace)?;
+                        self.expect_and_advance(TokenKind::RBrace)?;
+
                         actions.push(action);
 
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBracket)?;
-
-                    if actions.len() > 3 {
-                        return Err(ParseError::InvalidSyntax(
-                            "Maximum of 3 actions allowed".to_string(),
-                        ));
-                    }
+                    self.expect_and_advance(TokenKind::RBracket)?;
                 }
                 _ => {
                     let token = self.peek();
@@ -247,24 +263,24 @@ impl Parser {
             match self.peek().kind {
                 TokenKind::Baller => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
                     state.baller = Some(self.expect_identifier()?);
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Position => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
-                        self.expect(TokenKind::Equals)?;
+                        self.expect_and_advance(TokenKind::Equals)?;
                         let coord = self.parse_coordinate()?;
                         state.positions.insert(player, coord);
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                     self.consume_if(TokenKind::Comma);
                 }
                 _ => {
@@ -303,13 +319,19 @@ impl Parser {
                 let factor = if parts.len() > 1 {
                     let factor_str = parts[1];
                     if factor_str.len() > 3 {
-                        return Err(ParseError::InvalidSyntax(format!(
-                            "Curve factor must be at most 3 characters (e.g. 0.5): {}",
-                            factor_str
-                        )));
+                        return Err(ParseError::InvalidSyntax(
+                            token.clone(),
+                            format!(
+                                "Curve factor must be at most 3 characters (e.g. 0.5): {}",
+                                factor_str
+                            ),
+                        ));
                     }
                     factor_str.parse::<f64>().map_err(|_| {
-                        ParseError::InvalidSyntax(format!("Invalid curve factor: {}", factor_str))
+                        ParseError::InvalidSyntax(
+                            token.clone(),
+                            format!("Invalid curve factor: {}", factor_str),
+                        )
                     })?
                 } else {
                     DEFAULT_BEZIER_CURVE_FACTOR
@@ -318,10 +340,10 @@ impl Parser {
                 match dir_str {
                     "l" | "left" => Ok(PathType::Curve(CurveDirection::Left(factor))),
                     "r" | "right" => Ok(PathType::Curve(CurveDirection::Right(factor))),
-                    _ => Err(ParseError::InvalidSyntax(format!(
-                        "Unknown curve direction: {}",
-                        dir_str
-                    ))),
+                    _ => Err(ParseError::InvalidSyntax(
+                        self.peek().clone(),
+                        format!("Unknown curve direction: {}", dir_str),
+                    )),
                 }
             }
             TokenKind::Error(ref msg) => {
@@ -341,8 +363,8 @@ impl Parser {
             match self.peek().kind {
                 TokenKind::Move => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
                         let path_type = self.expect_arrow()?;
@@ -356,13 +378,13 @@ impl Parser {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Screen => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let player = self.expect_identifier()?;
                         let path_type = self.expect_arrow()?;
@@ -408,16 +430,16 @@ impl Parser {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Pass => {
                     self.advance();
-                    self.expect(TokenKind::Equals)?;
-                    self.expect(TokenKind::LBrace)?;
+                    self.expect_and_advance(TokenKind::Equals)?;
+                    self.expect_and_advance(TokenKind::LBrace)?;
                     while self.peek().kind != TokenKind::RBrace {
                         let from = self.expect_identifier()?;
-                        self.expect(TokenKind::Arrow)?;
+                        self.expect_and_advance(TokenKind::Arrow)?;
                         let to = self.expect_identifier()?;
                         let mut timing = Timing::None;
                         if self.peek().kind == TokenKind::Colon {
@@ -444,7 +466,7 @@ impl Parser {
                             self.advance();
                         }
                     }
-                    self.expect(TokenKind::RBrace)?;
+                    self.expect_and_advance(TokenKind::RBrace)?;
                     self.consume_if(TokenKind::Comma);
                 }
                 _ => {
@@ -468,6 +490,17 @@ impl Parser {
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
+
+    fn assert_token(
+        token: &Token,
+        expected_kind: &TokenKind,
+        expected_line: usize,
+        expected_column: usize,
+    ) {
+        assert_eq!(&token.kind, expected_kind);
+        assert_eq!(token.span.line, expected_line);
+        assert_eq!(token.span.column, expected_column);
+    }
 
     #[test]
     fn test_parse_players() {
@@ -643,11 +676,16 @@ mod tests {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
+
+        // Act
         let result = parser.parse();
+
+        // Assert
         assert!(result.is_err());
         match result.unwrap_err() {
-            ParseError::InvalidSyntax(msg) => {
+            ParseError::InvalidSyntax(token, msg) => {
                 assert!(msg.contains("Curve factor must be at most 3 characters"));
+                assert_token(&token, &TokenKind::CurveArrow("l:0.15".to_string()), 6, 20);
             }
             _ => panic!("Expected InvalidSyntax error"),
         }
@@ -687,6 +725,37 @@ mod tests {
         assert_eq!(playbook.actions.len(), 2);
         assert_eq!(playbook.actions[0].moves[0].target, (10.0, 0.0));
         assert_eq!(playbook.actions[1].moves[0].target, (10.0, 10.0));
+    }
+
+    #[test]
+    fn test_parse_error_too_many_actions() {
+        // Arrange
+        let input = r#"
+        players = { p1, p2 }
+        state = { position = { p1 = (0, 0), p2 = (10, 10) } }
+        actions = [
+            action = { move = { p1 -> (10, 0) } },
+            action = { move = { p1 -> (10, 10) } },
+            action = { move = { p2 -> (5, 5) } },
+            action = { move = { p2 -> (0, 0) } }
+        ]
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+
+        // Act
+        let result = parser.parse();
+
+        // Assert
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ParseError::InvalidSyntax(token, msg) => {
+                assert!(msg.contains("Maximum of 3 actions allowed"));
+                assert_token(&token, &TokenKind::Action, 8, 13);
+            }
+            _ => panic!("Expected InvalidSyntax error"),
+        }
     }
 
     #[test]

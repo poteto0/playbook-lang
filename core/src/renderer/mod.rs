@@ -328,7 +328,12 @@ impl Renderer {
                         )
                     }
                     ParseError::UnexpectedEOF => "Error: Unexpected End of File".to_string(),
-                    ParseError::InvalidSyntax(msg) => format!("Error: {}", msg),
+                    ParseError::InvalidSyntax(token, msg) => {
+                        format!(
+                            "Error at line {}, column {}: {} (found {:?})",
+                            token.span.line, token.span.column, msg, token.kind
+                        )
+                    }
                 };
                 Err(error_msg)
             }
