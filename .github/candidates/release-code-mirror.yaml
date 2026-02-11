@@ -1,0 +1,29 @@
+name: Release CodeMirror
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup just
+        uses: extractions/setup-just@v3
+
+      - name: Install dependencies and build
+        run: just build-code-mirror
+
+      - name: Publish to npm
+        run: cd code-mirror && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

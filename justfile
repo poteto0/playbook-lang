@@ -21,11 +21,22 @@ lint: lint-rust
 ut-rust:
     @cargo test --workspace
 
-[group("ci")]
-ut: ut-rust
+[group("node")]
+[working-directory("code-mirror")]
+ut-node:
+    @npm run test
 
-build:
-    @cargo build --workspace
+[group("ci")]
+ut: ut-rust ut-node
+
+[group("node")]
+[working-directory("code-mirror")]
+build-node:
+    @npm ci
+    @npm run build
+
+[group("ci")]
+build: build-node
 
 # check ci
 [group("ci")]
@@ -44,3 +55,14 @@ release-cli:
 [working-directory("core")]
 release-wasm:
     @wasm-pack build --target web
+
+[group("node")]
+[working-directory("code-mirror")]
+build-code-mirror:
+    @npm install
+    @npm run build
+
+[group("node")]
+[working-directory("code-mirror")]
+publish-code-mirror: build-code-mirror
+    @npm publish

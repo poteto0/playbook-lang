@@ -1,39 +1,39 @@
-import { describe, it, expect } from 'vitest';
-import { parser } from '../src/syntax.js';
+import { describe, it, expect } from "vitest";
+import { parser } from "../src/syntax.js";
 
-describe('Playbook Grammar', () => {
-  it('parses identifiers', () => {
+describe("Playbook Grammar", () => {
+  it("parses identifiers", () => {
     const input = "p1";
     const tree = parser.parse(input);
-    expect(tree.topNode.name).toBe('Program');
+    expect(tree.topNode.name).toBe("Program");
     // Program -> TopLevel -> Identifier
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.name).toBe('TopLevel');
-    expect(topLevel?.firstChild?.name).toBe('Identifier');
+    expect(topLevel?.name).toBe("TopLevel");
+    expect(topLevel?.firstChild?.name).toBe("Identifier");
   });
 
-  it('parses numbers', () => {
+  it("parses numbers", () => {
     const input = "100";
     const tree = parser.parse(input);
-    expect(tree.topNode.name).toBe('Program');
+    expect(tree.topNode.name).toBe("Program");
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.name).toBe('TopLevel');
-    expect(topLevel?.firstChild?.name).toBe('Number');
+    expect(topLevel?.name).toBe("TopLevel");
+    expect(topLevel?.firstChild?.name).toBe("Number");
   });
 
-  it('parses players block', () => {
+  it("parses players block", () => {
     const input = "players = { p1, p2 }";
     const tree = parser.parse(input);
-    expect(tree.topNode.name).toBe('Program');
+    expect(tree.topNode.name).toBe("Program");
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.name).toBe('TopLevel');
-    
+    expect(topLevel?.name).toBe("TopLevel");
+
     // TopLevel -> Players
     const playersNode = topLevel?.firstChild;
-    expect(playersNode?.name).toBe('Players');
+    expect(playersNode?.name).toBe("Players");
   });
 
-  it('parses state block', () => {
+  it("parses state block", () => {
     const input = `state = {
       baller = p1,
       position = {
@@ -43,10 +43,10 @@ describe('Playbook Grammar', () => {
     }`;
     const tree = parser.parse(input);
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.firstChild?.name).toBe('State');
+    expect(topLevel?.firstChild?.name).toBe("State");
   });
 
-  it('parses action block', () => {
+  it("parses action block", () => {
     const input = `action = {
       pass = {
         p1 -> p2,
@@ -54,16 +54,16 @@ describe('Playbook Grammar', () => {
     }`;
     const tree = parser.parse(input);
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.firstChild?.name).toBe('ActionBlock');
+    expect(topLevel?.firstChild?.name).toBe("ActionBlock");
   });
 
-  it('parses actions block (list)', () => {
+  it("parses actions block (list)", () => {
     const input = `actions = [
       action = { move = { p1 -> (0, 40) } },
       action = { pass = { p1 -> p2:after } }
     ]`;
     const tree = parser.parse(input);
     const topLevel = tree.topNode.firstChild;
-    expect(topLevel?.firstChild?.name).toBe('ActionsBlock');
+    expect(topLevel?.firstChild?.name).toBe("ActionsBlock");
   });
 });

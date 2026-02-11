@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playbook CodeMirror Demo</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        font-family: sans-serif;
+        background: #1e1e1e;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 1rem;
+        background: #2c3e50;
+        color: white;
+        flex-shrink: 0;
+      }
+      #editor-container {
+        flex: 1;
+        width: 100%;
+        overflow: hidden;
+      }
+      /* CodeMirror specific heights */
+      .cm-editor {
+        height: 100%;
+      }
+      .cm-scroller {
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Playbook CodeMirror Demo</h1>
+    </header>
+    <div id="editor-container"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
