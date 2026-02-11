@@ -1,24 +1,46 @@
 # help
+[group("misc")]
 default:
     @just --list
 
-fmt:
+[group("rust")]
+fmt-rust:
     @cargo fmt --all
 
-lint:
+[group("ci")]
+fmt: fmt-rust
+
+[group("rust")]
+lint-rust:
     @cargo clippy --all-targets --all-features -- -D warnings
 
-test:
+[group("ci")]
+lint: lint-rust
+
+[group("rust")]
+ut-rust:
     @cargo test --workspace
 
-ut:
-    @cargo test --workspace
+[group("node")]
+[working-directory("code-mirror")]
+ut-node:
+    @npm run test
 
-build:
-    @cargo build --workspace
+[group("ci")]
+ut: ut-rust ut-node
+
+[group("node")]
+[working-directory("code-mirror")]
+build-node:
+    @npm ci
+    @npm run build
+
+[group("ci")]
+build: build-node
 
 # check ci
-ci: fmt lint test
+[group("ci")]
+ci: fmt lint ut
 
 # run cli by cargo
 convert input_path="fixtures/canvas/input.playbook":
@@ -33,3 +55,14 @@ release-cli:
 [working-directory("core")]
 release-wasm:
     @wasm-pack build --target web
+
+[group("node")]
+[working-directory("code-mirror")]
+build-code-mirror:
+    @npm install
+    @npm run build
+
+[group("node")]
+[working-directory("code-mirror")]
+publish-code-mirror: build-code-mirror
+    @npm publish

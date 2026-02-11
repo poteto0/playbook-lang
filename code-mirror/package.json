@@ -1,0 +1,35 @@
+{
+  "name": "@poteto0/playbook-lang-syntax",
+  "version": "0.1.0",
+  "description": "CodeMirror extension for Playbook language",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poteto0/playbook-lang.git",
+    "directory": "code-mirror"
+  },
+  "homepage": "https://playbook-lang.poteto-mahiro.com/",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "build": "lezer-generator src/syntax.grammar -o src/syntax.js && tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@codemirror/language": "^6.12.1",
+    "@lezer/common": "^1.5.0",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/lr": "^1.4.8",
+    "@lezer/generator": "^1.8.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

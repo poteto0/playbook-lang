@@ -42,7 +42,7 @@ jobs:
           just-version: ${{ env.JUST_VERSION }}
 
       - name: run tests with just
-        run: just test
+        run: just ut-rust
 
   fmt:
     runs-on: ubuntu-latest
