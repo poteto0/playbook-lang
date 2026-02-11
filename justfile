@@ -5,7 +5,7 @@ default:
 
 [group("rust")]
 fmt-rust:
-    @cargo fmt-all
+    @cargo fmt --all
 
 [group("ci")]
 fmt: fmt-rust
