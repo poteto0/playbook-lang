@@ -1,24 +1,35 @@
 # help
+[group("misc")]
 default:
     @just --list
 
-fmt:
-    @cargo fmt --all
+[group("rust")]
+fmt-rust:
+    @cargo fmt-all
 
-lint:
+[group("ci")]
+fmt: fmt-rust
+
+[group("rust")]
+lint-rust:
     @cargo clippy --all-targets --all-features -- -D warnings
 
-test:
+[group("ci")]
+lint: lint-rust
+
+[group("rust")]
+ut-rust:
     @cargo test --workspace
 
-ut:
-    @cargo test --workspace
+[group("ci")]
+ut: ut-rust
 
 build:
     @cargo build --workspace
 
 # check ci
-ci: fmt lint test
+[group("ci")]
+ci: fmt lint ut
 
 # run cli by cargo
 convert input_path="fixtures/canvas/input.playbook":
