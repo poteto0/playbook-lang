@@ -1,6 +1,35 @@
 pub mod generator;
 use crate::ast::CurveDirection;
+use crate::lexer::Span;
 pub use generator::IRGenerator;
+use std::fmt;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum IRError {
+    UnexpectedPlayer(Span, String),
+    PlayerNotBaller(Span, String),
+}
+
+impl fmt::Display for IRError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            IRError::UnexpectedPlayer(span, name) => {
+                write!(
+                    f,
+                    "Player '{}' not found at line {}, column {}",
+                    name, span.line, span.column
+                )
+            }
+            IRError::PlayerNotBaller(span, name) => {
+                write!(
+                    f,
+                    "Player '{}' does not have the ball at line {}, column {}",
+                    name, span.line, span.column
+                )
+            }
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Scene {

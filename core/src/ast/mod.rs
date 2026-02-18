@@ -1,3 +1,4 @@
+use crate::lexer::Span;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -25,6 +26,7 @@ pub struct MoveAction {
     pub player: String,
     pub target: (f64, f64),
     pub path_type: PathType,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -39,6 +41,7 @@ pub struct ScreenAction {
     pub target: ScreenTarget,
     pub timing: Timing,
     pub path_type: PathType,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -46,6 +49,7 @@ pub struct PassAction {
     pub from: String,
     pub to: String,
     pub timing: Timing,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]

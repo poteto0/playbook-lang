@@ -373,6 +373,7 @@ impl Parser {
                             player,
                             target,
                             path_type,
+                            span: self.peek().clone().span,
                         });
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
@@ -425,6 +426,7 @@ impl Parser {
                             target,
                             timing,
                             path_type,
+                            span: self.peek().clone().span,
                         });
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
@@ -461,7 +463,12 @@ impl Parser {
                                 }
                             }
                         }
-                        action.passes.push(PassAction { from, to, timing });
+                        action.passes.push(PassAction {
+                            from,
+                            to,
+                            timing,
+                            span: self.peek().clone().span,
+                        });
                         if self.peek().kind == TokenKind::Comma {
                             self.advance();
                         }

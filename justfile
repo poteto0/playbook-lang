@@ -29,6 +29,10 @@ ut-node:
 [group("ci")]
 ut: ut-rust ut-node
 
+[group("ci")]
+ut-cov:
+    @cargo llvm-cov
+
 [group("node")]
 [working-directory("code-mirror")]
 build-node:

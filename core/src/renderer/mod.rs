@@ -315,10 +315,30 @@ impl Renderer {
         let mut parser = Parser::new(tokens);
 
         match parser.parse() {
-            Ok(playbook) => {
-                let scene = IRGenerator::generate(playbook)?;
-                Ok(self.render_scene(&scene))
-            }
+            Ok(playbook) => match IRGenerator::generate(playbook) {
+                Ok(scene) => Ok(self.render_scene(&scene)),
+                Err(e) => {
+                    let error_msg = match e {
+                        crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
+                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\", \"found\":\"{}\"}}",
+                            span.line,
+                            span.column,
+                            span.len(),
+                            name,
+                            name
+                        ),
+                        crate::ir::IRError::PlayerNotBaller(span, name) => format!(
+                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\", \"found\":\"{}\"}}",
+                            span.line,
+                            span.column,
+                            span.len(),
+                            name,
+                            name
+                        ),
+                    };
+                    Err(error_msg)
+                }
+            },
             Err(e) => {
                 let error_msg = match e {
                     ParseError::UnexpectedToken(token, msg)
