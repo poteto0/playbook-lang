@@ -28,3 +28,19 @@
 - [x] Update IR Generator to process actions sequentially, tracking positions and baller state across phases
 - [x] Add unit tests for multiple action parsing and IR generation
 - [x] Verify full pipeline with multiple actions
+
+## Linter Implementation (New Crate)
+
+- [x] **Create `linter` crate**: Initialize a new Rust library crate (`linter`) in the workspace.
+- [x] **Configure Dependencies**: Add `playbook_lang_core`, `serde`, `serde-wasm-bindgen`, and `wasm-bindgen` to `linter/Cargo.toml`.
+- [x] **Implement `LintDiagnostic`**: Define a struct for error messages (line, column, message, severity).
+- [x] **Implement `lint` function**: Create a function that parses code using `core` and maps `ParseError` to `LintDiagnostic`.
+- [x] **Expose to WASM**: Annotate the `lint` function with `#[wasm_bindgen]` for JS usage.
+- [x] **Build WASM**: Compile the `linter` crate to WASM.
+- [x] **Unit Testing**: Add tests for `lint` logic.
+
+## CodeMirror Integration (Pending)
+
+- [ ] **Update Demo**: Add `pkg-linter` dependency to `examples/codemirror-demo`.
+- [ ] **Implement Linter Extension**: Create a CodeMirror extension that calls the WASM linter.
+- [ ] **Verify**: Check error display in the demo.
