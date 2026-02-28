@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   server: {
     fs: {
-      allow: ['..', '../../code-mirror']
+      allow: ['..', '../../code-mirror', '../../pkg-linter']
     }
   },
   resolve: {

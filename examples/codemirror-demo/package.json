@@ -19,6 +19,8 @@
     "@lezer/highlight": "^1.2.3",
     "@lezer/lr": "^1.4.8",
     "@poteto0/playbook-lang-syntax": "^0.1.0",
+    "@poteto0/playbook-lang-linter": "file:../../pkg-linter",
+    "@codemirror/lint": "^6.4.2",
     "codemirror": "^6.0.1"
   }
 }
