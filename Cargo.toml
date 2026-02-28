@@ -2,5 +2,6 @@
 members = [
     "core",
     "cli",
+    "linter",
 ]
 resolver = "2"
