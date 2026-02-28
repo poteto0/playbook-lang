@@ -39,8 +39,9 @@
 - [x] **Build WASM**: Compile the `linter` crate to WASM.
 - [x] **Unit Testing**: Add tests for `lint` logic.
 
-## CodeMirror Integration (Pending)
+## CodeMirror Integration
 
-- [ ] **Update Demo**: Add `pkg-linter` dependency to `examples/codemirror-demo`.
-- [ ] **Implement Linter Extension**: Create a CodeMirror extension that calls the WASM linter.
-- [ ] **Verify**: Check error display in the demo.
+- [x] **Install Dependency**: Add `pkg-linter` (local path) dependency to `examples/codemirror-demo`.
+- [x] **Implement Linter Extension**: Create `src/linter.ts` in `examples/codemirror-demo` that calls `lint_playbook`.
+- [x] **Register Linter**: Add the linter extension to the editor configuration in `examples/codemirror-demo/src/main.ts`.
+- [x] **Verify**: Run the demo and check error reporting.

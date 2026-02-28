@@ -1,6 +1,8 @@
 import { EditorView, basicSetup } from "codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { playbook } from "@poteto0/playbook-lang-syntax";
+import init from "@poteto0/playbook-lang-linter";
+import { playbookLinter } from "./linter";
 
 const initialText = `players = { p1, p2, p3, p4, p5 }
 
@@ -38,21 +40,38 @@ actions = [
 ]
 `;
 
-console.log("Initializing Playbook Editor...");
-const container = document.getElementById("editor-container");
-
-if (container) {
+async function main() {
+  console.log("Initializing Playbook Editor...");
+  
   try {
-    new EditorView({
-      doc: initialText,
-      extensions: [basicSetup, oneDark, playbook()],
-      parent: container,
-    });
-    console.log("Playbook EditorView created.");
+    // Initialize WASM linter
+    await init();
+    console.log("WASM Linter initialized.");
+
+    const container = document.getElementById("editor-container");
+
+    if (container) {
+      new EditorView({
+        doc: initialText,
+        extensions: [
+            basicSetup, 
+            oneDark, 
+            playbook(),
+            playbookLinter
+        ],
+        parent: container,
+      });
+      console.log("Playbook EditorView created.");
+    } else {
+      console.error("Editor container not found!");
+    }
   } catch (e) {
-    console.error("Error creating EditorView:", e);
-    container.innerHTML = `<pre style="color: red; padding: 1rem;">Error: ${e}</pre>`;
+    console.error("Failed to initialize editor:", e);
+    const container = document.getElementById("editor-container");
+    if (container) {
+       container.innerHTML = `<pre style="color: red; padding: 1rem;">Failed to initialize: ${e}</pre>`;
+    }
   }
-} else {
-  console.error("Editor container not found!");
 }
+
+main();
