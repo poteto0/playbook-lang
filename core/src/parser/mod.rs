@@ -207,6 +207,10 @@ impl Parser {
                 TokenKind::Actions => {
                     self.parse_actions_section(&mut actions);
                 }
+                TokenKind::Error(msg) => {
+                    let token = self.advance();
+                    self.error(ParseError::UnexpectedToken(token, msg));
+                }
                 _ => {
                     let token = self.peek();
                     let mut msg =
