@@ -19,6 +19,7 @@
 - [x] Lexer: Add `TokenKind::Error` and improve `read_inside_brackets` robustness (check unclosed bracket/newline)
 - [x] Parser: Add length check for curve factor (max 3 chars)
 - [x] Parser: Handle `TokenKind::Error` in `expect_arrow`
+- [x] Parser: Support multiple errors
 
 ## Multiple Action Support
 - [x] Update Lexer to support `actions` keyword, `[` and `]` symbols
