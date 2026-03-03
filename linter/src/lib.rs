@@ -1,7 +1,7 @@
+use playbook_lang_core::lexer::Lexer;
+use playbook_lang_core::parser::{ParseError, Parser};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
-use playbook_lang_core::parser::{Parser, ParseError};
-use playbook_lang_core::lexer::{Lexer};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct LintDiagnostic {
@@ -15,11 +15,13 @@ fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
-    
-    match parser.parse() {
-        Ok(_) => vec![],
-        Err(e) => {
-            let diagnostic = match e {
+
+    let (_, errors) = parser.parse();
+
+    errors
+        .into_iter()
+        .map(|e| {
+            match e {
                 ParseError::UnexpectedToken(token, msg) => LintDiagnostic {
                     line: token.span.line,
                     column: token.span.column,
@@ -38,10 +40,9 @@ fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
                     message: "Unexpected End of File".to_string(),
                     severity: "error".to_string(),
                 },
-            };
-            vec![diagnostic]
-        }
-    }
+            }
+        })
+        .collect()
 }
 
 #[wasm_bindgen]
@@ -78,7 +79,15 @@ mod tests {
         // Curve factor too long triggers InvalidSyntax
         let input = "players={p1} state={} action={ move={ p1 ~[l:0.1234]> (0,0) } }";
         let diagnostics = lint_playbook_internal(input);
-        assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].message.contains("Curve factor must be at most 3 characters"));
+        assert!(!diagnostics.is_empty());
+        let found = diagnostics.iter().any(|d| {
+            d.message
+                .contains("Curve factor must be at most 3 characters")
+        });
+        assert!(
+            found,
+            "Expected error message not found in diagnostics: {:?}",
+            diagnostics
+        );
     }
 }

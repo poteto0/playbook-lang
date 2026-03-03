@@ -314,37 +314,16 @@ impl Renderer {
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
 
-        match parser.parse() {
-            Ok(playbook) => match IRGenerator::generate(playbook) {
-                Ok(scene) => Ok(self.render_scene(&scene)),
-                Err(e) => {
-                    let error_msg = match e {
-                        crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
-                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\", \"found\":\"{}\"}}",
-                            span.line,
-                            span.column,
-                            span.len(),
-                            name,
-                            name
-                        ),
-                        crate::ir::IRError::PlayerNotBaller(span, name) => format!(
-                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\", \"found\":\"{}\"}}",
-                            span.line,
-                            span.column,
-                            span.len(),
-                            name,
-                            name
-                        ),
-                    };
-                    Err(error_msg)
-                }
-            },
-            Err(e) => {
-                let error_msg = match e {
+        let (playbook, errors) = parser.parse();
+
+        if !errors.is_empty() {
+            let error_jsons: Vec<String> = errors
+                .iter()
+                .map(|e| match e {
                     ParseError::UnexpectedToken(token, msg)
                     | ParseError::InvalidSyntax(token, msg) => {
                         format!(
-                            "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
+                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
                             token.span.line,
                             token.span.column,
                             token.span.len(),
@@ -353,12 +332,38 @@ impl Renderer {
                         )
                     }
                     ParseError::UnexpectedEOF => format!(
-                        "[Error]:{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":{}}}",
+                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
                         0,
                         0,
                         0,
                         "Unexpected end of file",
                         TokenKind::EOF,
+                    ),
+                })
+                .collect();
+
+            return Err(format!("[Error]:[{}]", error_jsons.join(", ")));
+        }
+
+        match IRGenerator::generate(playbook) {
+            Ok(scene) => Ok(self.render_scene(&scene)),
+            Err(e) => {
+                let error_msg = match e {
+                    crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\", \"found\":\"{}\"}}]",
+                        span.line,
+                        span.column,
+                        span.len(),
+                        name,
+                        name
+                    ),
+                    crate::ir::IRError::PlayerNotBaller(span, name) => format!(
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\", \"found\":\"{}\"}}]",
+                        span.line,
+                        span.column,
+                        span.len(),
+                        name,
+                        name
                     ),
                 };
                 Err(error_msg)
@@ -405,7 +410,7 @@ mod tests {
         let renderer = Renderer::new();
         let input = "players = { "; // Missing closing brace
         let output = renderer.render(input).unwrap_err();
-        assert!(output.contains("Error"));
+        assert!(output.contains("[Error]:["));
         // EOF handling is tricky to test specific line without knowing where EOF span lands,
         // but it should contain "Error" and likely "Expected `}`".
         assert!(output.contains("Expected `}`"));
