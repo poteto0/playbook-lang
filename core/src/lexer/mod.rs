@@ -347,6 +347,27 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn tokenize(&mut self) -> Vec<Token> {
+        let max_size = std::env::var("MAX_INPUT_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(100 * 1024); // 100KB
+
+        if self.input.len() > max_size {
+            return vec![Token {
+                kind: TokenKind::Error(format!(
+                    "Input too large: {} bytes (max: {} bytes)",
+                    self.input.len(),
+                    max_size
+                )),
+                span: Span {
+                    start: 0,
+                    end: 0,
+                    line: 0,
+                    column: 0,
+                },
+            }];
+        }
+
         let mut tokens = Vec::new();
         loop {
             let token = self.next_token();
@@ -434,5 +455,17 @@ mod tests {
         let tokens = lexer.tokenize();
         assert_eq!(tokens[0].span.line, 2);
         assert_eq!(tokens[0].span.column, 3);
+    }
+
+    #[test]
+    fn test_input_too_large() {
+        let input = "a".repeat(100 * 1024 + 1);
+        let mut lexer = Lexer::new(&input);
+        let tokens = lexer.tokenize();
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0].kind {
+            TokenKind::Error(msg) => assert!(msg.contains("Input too large")),
+            _ => panic!("Expected Error token"),
+        }
     }
 }
