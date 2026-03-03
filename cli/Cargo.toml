@@ -1,8 +1,9 @@
 [package]
 name = "playbook-cli"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 playbook_lang_core = { path = "../core" }
+playbook_lang_formatter = { path = "../formatter" }
 clap = { version = "4.0", features = ["derive"] }

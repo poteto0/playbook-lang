@@ -1,0 +1,16 @@
+// Global comment
+players = { p1, p2 }
+
+state = {
+  baller = p1, // who has the ball
+  position = {
+    p1 = (0, 0),
+    p2 = (10, 10),
+  },
+}
+
+action = {
+  move = {
+    p1 -> (10, 0), // move to right
+  }
+}

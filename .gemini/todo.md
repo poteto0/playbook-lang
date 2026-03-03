@@ -46,3 +46,22 @@
 - [x] **Implement Linter Extension**: Create `src/linter.ts` in `examples/codemirror-demo` that calls `lint_playbook`.
 - [x] **Register Linter**: Add the linter extension to the editor configuration in `examples/codemirror-demo/src/main.ts`.
 - [x] **Verify**: Run the demo and check error reporting.
+
+## Formatter Implementation (New Crate)
+
+- [x] **Create `formatter` crate**: Initialize a new Rust library crate (`formatter`) in the workspace.
+- [x] **Extend `core` AST**: Add `comments: Vec<(Span, String)>` to `Playbook` struct (or similar mechanism).
+- [x] **Update `core` Parser**: Modify parser to collect `TokenKind::Comment` instead of skipping them.
+- [ ] **Implement Core Formatting Logic**:
+    - [x] Handle `players` section formatting.
+    - [x] Handle `state` section formatting (baller, positions).
+    - [x] Handle `actions` section formatting (nested blocks).
+    - [ ] Implement comment re-insertion based on Spans.
+- [x] **Refactor CLI**:
+    - [x] Add `clap` subcommands: `render` and `fmt`.
+    - [x] Implement `render` logic (existing functionality).
+    - [x] Implement `fmt` logic (print to stdout or use `--write`).
+- [ ] **Verification**:
+    - [x] Add unit tests for formatting different syntax elements.
+    - [x] Ensure idempotency (fmt(fmt(code)) == fmt(code)).
+    - [ ] Create formatting fixtures.
