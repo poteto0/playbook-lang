@@ -242,6 +242,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "playbook_lang_core",
+ "playbook_lang_formatter",
 ]
 
 [[package]]
@@ -249,6 +250,13 @@ name = "playbook_lang_core"
 version = "0.1.0"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "playbook_lang_formatter"
+version = "0.1.0"
+dependencies = [
+ "playbook_lang_core",
 ]
 
 [[package]]

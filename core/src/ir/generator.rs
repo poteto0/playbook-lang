@@ -223,6 +223,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
+            comments: vec![],
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -256,6 +257,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
+            comments: vec![],
         };
 
         let result = IRGenerator::generate(playbook);
@@ -286,6 +288,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
+            comments: vec![],
         };
 
         let result = IRGenerator::generate(playbook);

@@ -13,6 +13,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     errors: Vec<ParseError>,
+    comments: Vec<(Span, String)>,
 }
 
 fn levenshtein(a: &str, b: &str) -> usize {
@@ -66,6 +67,7 @@ impl Parser {
             tokens,
             pos: 0,
             errors: Vec::new(),
+            comments: Vec::new(),
         }
     }
 
@@ -190,8 +192,9 @@ impl Parser {
 
         while self.peek().kind != TokenKind::EOF {
             match self.peek().kind {
-                TokenKind::Comment(_) => {
-                    self.advance();
+                TokenKind::Comment(ref s) => {
+                    let token = self.advance();
+                    self.comments.push((token.span, s.clone()));
                 }
                 TokenKind::Players => {
                     self.parse_players_section(&mut players);
@@ -236,6 +239,7 @@ impl Parser {
                 players,
                 state,
                 actions,
+                comments: self.comments.clone(),
             },
             self.errors.clone(),
         )
@@ -305,8 +309,9 @@ impl Parser {
         }
 
         while self.peek().kind != TokenKind::RBracket && self.peek().kind != TokenKind::EOF {
-            if let TokenKind::Comment(_) = self.peek().kind {
-                self.advance();
+            if let TokenKind::Comment(ref s) = self.peek().kind {
+                let token = self.advance();
+                self.comments.push((token.span, s.clone()));
                 continue;
             }
 

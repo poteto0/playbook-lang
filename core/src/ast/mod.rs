@@ -6,6 +6,7 @@ pub struct Playbook {
     pub players: Vec<String>,
     pub state: State,
     pub actions: Vec<Action>,
+    pub comments: Vec<(Span, String)>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]

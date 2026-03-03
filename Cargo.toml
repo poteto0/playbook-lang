@@ -3,5 +3,6 @@ members = [
     "core",
     "cli",
     "linter",
+    "formatter",
 ]
 resolver = "2"
