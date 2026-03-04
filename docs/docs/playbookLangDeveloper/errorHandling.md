@@ -26,8 +26,7 @@ EX)
 ```
 
 Therefore, you can handle it as follows in your TypeScript application:
-
-```ts title="parsePlayBookError.ts"
+```ts title="parsePlayBookErrors.ts"
 export interface PlayBookError {
   line: number;
   column: number;
@@ -39,6 +38,7 @@ export interface PlayBookError {
 export function parsePlayBookErrors(
   errorString: string,
 ): PlayBookError[] {
+```
   const prefix = "[Error]:";
   if (errorString.startsWith(prefix)) {
     try {
