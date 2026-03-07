@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use crate::ir::*;
 
 pub struct Renderer {
@@ -51,11 +52,12 @@ impl Renderer {
 
     fn render_court(&self) -> String {
         let mut court = String::new();
-        court.push_str(&format!(
+        let _ = write!(
+            &mut court,
             "<svg width=\"{}\" height=\"{}\" viewBox=\"-105 -105 210 210\" xmlns=\"http://www.w3.org/2000/svg\">",
             self.width,
             self.height
-        ));
+        );
 
         // 0. Global Background (White fill for everything)
         court
@@ -171,11 +173,11 @@ impl Renderer {
             let end_x = m.from.0 + ux * end_dist;
             let end_y = m.from.1 + uy * end_dist;
 
-            path_data.push_str(&format!(" Q {} {} {} {}", cp_x, cp_y, end_x, end_y));
+            let _ = write!(&mut path_data, " Q {} {} {} {}", cp_x, cp_y, end_x, end_y);
         }
 
         // End with linear segment
-        path_data.push_str(&format!(" L {} {}", m.to.0, m.to.1));
+        let _ = write!(&mut path_data, " L {} {}", m.to.0, m.to.1);
 
         let marker = if draw_arrow {
             " marker-end=\"url(#arrowhead)\""
@@ -251,24 +253,27 @@ impl Renderer {
         match &s.curve {
             Some(dir) => {
                 let (cpx, cpy) = self.calculate_control_point(s.from, (cx, cy), dir);
-                svg.push_str(&format!(
+                let _ = write!(
+                    &mut svg,
                     "<path d=\"M {} {} Q {} {} {} {}\" stroke=\"black\" stroke-width=\"2\" fill=\"none\" />",
                     s.from.0, s.from.1, cpx, cpy, cx, cy
-                ));
+                );
             }
             None => {
-                svg.push_str(&format!(
+                let _ = write!(
+                    &mut svg,
                     "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
                     s.from.0, s.from.1, cx, cy
-                ));
+                );
             }
         }
 
         // Draw the perpendicular bar
-        svg.push_str(&format!(
+        let _ = write!(
+            &mut svg,
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" />",
             bx1, by1, bx2, by2
-        ));
+        );
 
         svg
     }
@@ -286,20 +291,23 @@ impl Renderer {
 
     fn render_player(&self, entity: &Entity) -> String {
         let mut player = String::new();
-        player.push_str(&format!(
+        let _ = write!(
+                &mut player,
                 "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
                 entity.start_pos.0, entity.start_pos.1
-            ));
-        player.push_str(&format!(
+            );
+        let _ = write!(
+                &mut player,
                 "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
                 entity.start_pos.0, entity.start_pos.1, entity.label
-            ));
+            );
 
         if entity.is_baller {
-            player.push_str(&format!(
+            let _ = write!(
+                    &mut player,
                     "<circle cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"orange\" stroke=\"black\" stroke-width=\"1\" transform=\"translate(10, -10)\" />",
                     entity.start_pos.0, entity.start_pos.1
-                ));
+                );
         }
 
         player

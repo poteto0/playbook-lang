@@ -6,6 +6,9 @@ use playbook_lang_core::lexer::{Lexer, Span};
 use playbook_lang_core::parser::Parser;
 use std::collections::VecDeque;
 
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
 pub fn format(input: &str) -> String {
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize();

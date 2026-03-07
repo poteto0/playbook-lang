@@ -7,4 +7,4 @@ edition = "2024"
 playbook_lang_core = { path = "../core" }
 playbook_lang_formatter = { path = "../formatter" }
 playbook_lang_linter = { path = "../linter" }
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.5", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
