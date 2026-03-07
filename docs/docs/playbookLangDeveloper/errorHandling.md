@@ -13,7 +13,6 @@ When a compilation error occurs, it returns an error message with the following 
     "column": number,
     "length": number,
     "message": string,
-    "found": string,
   },
   ...
 ]
@@ -22,23 +21,20 @@ When a compilation error occurs, it returns an error message with the following 
 EX)
 
 ```
-[Error]:[{"line":24, "column":10, "length":1, "message":"Expected -> or ~>", "found":"^"}]
+[Error]:[{"line":24, "column":10, "length":1, "message":"Expected -> or ~>, but found '^'"}]
 ```
 
 Therefore, you can handle it as follows in your TypeScript application:
+
 ```ts title="parsePlayBookErrors.ts"
 export interface PlayBookError {
   line: number;
   column: number;
   length: number;
   message: string;
-  found: string;
 }
 
-export function parsePlayBookErrors(
-  errorString: string,
-): PlayBookError[] {
-```
+export function parsePlayBookErrors(errorString: string): PlayBookError[] {
   const prefix = "[Error]:";
   if (errorString.startsWith(prefix)) {
     try {

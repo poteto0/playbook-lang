@@ -470,9 +470,9 @@ impl Parser {
                 let token = self.peek();
                 Err(ParseError::UnexpectedToken(token, msg.clone()))
             }
-            _ => Err(ParseError::UnexpectedToken(
-                token,
-                "Expected -> or ~>".to_string(),
+            unexpected => Err(ParseError::UnexpectedToken(
+                self.peek().clone(),
+                format!("Expected '->' or '~>', but found '{}'", unexpected),
             )),
         }
     }

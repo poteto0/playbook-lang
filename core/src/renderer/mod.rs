@@ -1,4 +1,4 @@
-use crate::{ir::*, lexer::TokenKind};
+use crate::ir::*;
 
 pub struct Renderer {
     width: u32,
@@ -323,21 +323,16 @@ impl Renderer {
                     ParseError::UnexpectedToken(token, msg)
                     | ParseError::InvalidSyntax(token, msg) => {
                         format!(
-                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
+                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
                             token.span.line,
                             token.span.column,
                             token.span.len(),
                             msg,
-                            token.kind
                         )
                     }
                     ParseError::UnexpectedEOF => format!(
-                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\", \"found\":\"{}\"}}",
-                        0,
-                        0,
-                        0,
-                        "Unexpected end of file",
-                        TokenKind::EOF,
+                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
+                        0, 0, 0, "Unexpected end of file"
                     ),
                 })
                 .collect();
@@ -350,19 +345,17 @@ impl Renderer {
             Err(e) => {
                 let error_msg = match e {
                     crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\", \"found\":\"{}\"}}]",
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\"}}]",
                         span.line,
                         span.column,
                         span.len(),
                         name,
-                        name
                     ),
                     crate::ir::IRError::PlayerNotBaller(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\", \"found\":\"{}\"}}]",
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\"}}]",
                         span.line,
                         span.column,
                         span.len(),
-                        name,
                         name
                     ),
                 };
