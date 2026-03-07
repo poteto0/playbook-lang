@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use playbook_lang_core::Renderer;
 use playbook_lang_formatter::format;
+use playbook_lang_linter::lint;
 use std::fs;
 use std::path::PathBuf;
 
@@ -27,6 +28,11 @@ enum Commands {
         /// Input .playbook file
         input: PathBuf,
     },
+    /// Lint playbook-lang files (outputs to stdout)
+    Lint {
+        /// Input .playbook file
+        input: PathBuf,
+    }
 }
 
 fn main() {
@@ -62,6 +68,14 @@ fn main() {
             let input_content = fs::read_to_string(&input).expect("Failed to read input file");
             let formatted = format(&input_content);
             print!("{}", formatted);
+        }
+        Commands::Lint { input } => {
+            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
+            let linter_outputs = lint(&input_content);
+            for output in linter_outputs.iter() {
+                println!("lint error [{}]: {}", output.severity, output.message);
+                println!("line: {}, column: {}", output.line, output.column);
+            }
         }
     }
 }

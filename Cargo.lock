@@ -243,6 +243,7 @@ dependencies = [
  "clap",
  "playbook_lang_core",
  "playbook_lang_formatter",
+ "playbook_lang_linter",
 ]
 
 [[package]]

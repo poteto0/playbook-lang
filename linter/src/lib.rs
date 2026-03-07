@@ -66,6 +66,10 @@ pub fn lint_playbook(input: &str) -> Result<JsValue, JsValue> {
     Ok(diagnostics.serialize(&serializer)?)
 }
 
+pub fn lint(input: &str) -> Vec<LintDiagnostic> {
+    lint_playbook_internal(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
