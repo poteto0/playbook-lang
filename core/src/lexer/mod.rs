@@ -292,7 +292,10 @@ impl<'a> Lexer<'a> {
                                 self.advance(); // >
                                 TokenKind::CurveArrow(content)
                             } else {
-                                TokenKind::Error("Expected ]> after curve parameters".to_string())
+                                TokenKind::Error(format!(
+                                    "Expected ]> after curve parameters, but found '{}",
+                                    content
+                                ))
                             }
                         }
                         Err(msg) => TokenKind::Error(msg),

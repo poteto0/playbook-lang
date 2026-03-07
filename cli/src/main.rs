@@ -32,7 +32,7 @@ enum Commands {
     Lint {
         /// Input .playbook file
         input: PathBuf,
-    }
+    },
 }
 
 fn main() {
@@ -53,10 +53,7 @@ fn main() {
                     });
 
                     fs::write(&output_path, svg).expect("Failed to write output file");
-                    println!(
-                        "Successfully converted {:?} to {:?}",
-                        input, output_path
-                    );
+                    println!("Successfully converted {:?} to {:?}", input, output_path);
                 }
                 Err(e) => {
                     eprintln!("Compile Error:\n{}", e);

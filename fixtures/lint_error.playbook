@@ -1,12 +1,14 @@
-players = { p1, p2, p3, p4, p5 }
+prayers = { p1, p2, p3, p4, p5 }
 
 state = {
   baller = p1,
   position = {
     p1 = (0, x),
-    p2 = (90, x),
-    p3 = (-90, x),
-    p4 = (50, x),
-    p5 = (-50, x),
   },
+}
+
+action = {
+  move = {
+    p1 ~[]) (0, 0),
+  }
 }

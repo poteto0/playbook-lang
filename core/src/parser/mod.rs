@@ -119,8 +119,8 @@ impl Parser {
             Ok(())
         } else {
             Err(ParseError::UnexpectedToken(
-                token,
-                format!("Expected `{}`", expected_kind),
+                token.clone(),
+                format!("Expected `{}`, but found `{}`", expected_kind, token.kind),
             ))
         }
     }
@@ -132,19 +132,19 @@ impl Parser {
             Ok(())
         } else {
             Err(ParseError::UnexpectedToken(
-                token,
-                format!("Expected `{}`", expected_kind),
+                token.clone(),
+                format!("Expected `{}`, but found `{}`", expected_kind, token.kind),
             ))
         }
     }
 
     fn expect_identifier(&mut self) -> Result<String, ParseError> {
         let token = self.advance();
-        match token.kind {
+        match token.clone().kind {
             TokenKind::Identifier(s) => Ok(s),
-            _ => Err(ParseError::UnexpectedToken(
+            unexpected => Err(ParseError::UnexpectedToken(
                 token,
-                "Expected Identifier".to_string(),
+                format!("Expected Identifier, but found '{}'", unexpected),
             )),
         }
     }
@@ -161,23 +161,29 @@ impl Parser {
     fn parse_coordinate(&mut self) -> Result<(f64, f64), ParseError> {
         self.expect_and_advance(TokenKind::LParenthesis)?;
         let token = self.advance();
-        let x = match token.kind {
+        let x = match token.clone().kind {
             TokenKind::Number(n) => n,
-            _ => {
+            unexpected => {
                 return Err(ParseError::UnexpectedToken(
                     token,
-                    "Expected Number for X".to_string(),
+                    format!(
+                        "Expected a numeric value for x-coordinate, but received '{}'",
+                        unexpected
+                    ),
                 ));
             }
         };
         self.expect_and_advance(TokenKind::Comma)?;
         let token = self.advance();
-        let y = match token.kind {
+        let y = match token.clone().kind {
             TokenKind::Number(n) => n,
-            _ => {
+            unexpected => {
                 return Err(ParseError::UnexpectedToken(
                     token,
-                    "Expected Number for Y".to_string(),
+                    format!(
+                        "Expected a numeric value for y-coordinate, but received '{}'",
+                        unexpected
+                    ),
                 ));
             }
         };
@@ -216,8 +222,10 @@ impl Parser {
                 }
                 _ => {
                     let token = self.peek();
-                    let mut msg =
-                        "Expected section start (players, state, action, actions)".to_string();
+                    let mut msg = format!(
+                        "Expected section start (players, state, action, actions), but found '{}'",
+                        token.clone().kind
+                    );
                     let TokenKind::Identifier(ref s) = token.kind else {
                         self.error(ParseError::UnexpectedToken(token, msg));
                         self.advance();
