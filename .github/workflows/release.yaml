@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      # --- CLI Build ---
+      - name: Build CLI (Fast)
+        run: just release-cli
+
+      - name: Build CLI (Small)
+        run: just release-cli-small
+
+      - name: Rename CLI Artifacts
+        run: |
+          mv build/playbook-cli playbook-cli-linux-amd64
+          mv build/playbook-cli-small playbook-cli-small-linux-amd64
+
+      # --- Core WASM Build ---
+      - name: Build Core WASM (Fast)
+        run: just release-wasm
+      - name: Archive Core WASM (Fast)
+        run: tar -czf playbook-core-wasm.tar.gz -C core/pkg .
+
+      - name: Build Core WASM (Small)
+        run: just release-wasm-small
+      - name: Archive Core WASM (Small)
+        run: tar -czf playbook-core-wasm-small.tar.gz -C core/pkg .
+
+      # --- Linter WASM Build ---
+      - name: Build Linter WASM (Fast)
+        run: just release-wasm-linter
+      - name: Archive Linter WASM (Fast)
+        run: tar -czf playbook-linter-wasm.tar.gz -C linter/pkg .
+
+      - name: Build Linter WASM (Small)
+        run: just release-wasm-linter-small
+      - name: Archive Linter WASM (Small)
+        run: tar -czf playbook-linter-wasm-small.tar.gz -C linter/pkg .
+
+      # --- Formatter WASM Build ---
+      - name: Build Formatter WASM (Fast)
+        run: just release-wasm-formatter
+      - name: Archive Formatter WASM (Fast)
+        run: tar -czf playbook-formatter-wasm.tar.gz -C formatter/pkg .
+
+      - name: Build Formatter WASM (Small)
+        run: just release-wasm-formatter-small
+      - name: Archive Formatter WASM (Small)
+        run: tar -czf playbook-formatter-wasm-small.tar.gz -C formatter/pkg .
+
+      # --- Create Release ---
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            playbook-cli-linux-amd64
+            playbook-cli-small-linux-amd64
+            playbook-core-wasm.tar.gz
+            playbook-core-wasm-small.tar.gz
+            playbook-linter-wasm.tar.gz
+            playbook-linter-wasm-small.tar.gz
+            playbook-formatter-wasm.tar.gz
+            playbook-formatter-wasm-small.tar.gz
+          generate_release_notes: true
