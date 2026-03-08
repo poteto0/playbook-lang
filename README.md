@@ -87,6 +87,35 @@ just convert fixtures/input.playbook
 
 <img src="./fixtures/output.svg" alt="Output" width="500" height="500">
 
+## Performance & Build
+
+### Build Size & Speed Trade-offs
+
+The project offers two build profiles: **Fast** (default, speed-optimized) and **Small** (size-optimized).
+
+| Component | Profile | Optimization | Size (Approx.) | Performance Impact |
+| :--- | :--- | :--- | :--- | :--- |
+| **CLI Binary** | `release-cli` (Fast) | `opt-level=3` | **747 KB** | **Baseline (Fastest)** |
+| | `release-cli-small` | `opt-level="z"` | **587 KB** (-21%) | ~1.8x slower compile, ~2.6x slower lint |
+| **WASM Core** | `release-wasm` (Fast) | `opt-level=3` | **133 KB** | **Baseline (Fastest)** |
+| | `release-wasm-small` | `opt-level="z"` | **108 KB** (-19%) | Slower runtime, faster download |
+
+*Note: While `opt-level="z"` is statistically slower (e.g., compile time increases from ~19µs to ~35µs), the difference is negligible for typical usage patterns.*
+
+### Build Commands
+
+Use `just` to build specific profiles:
+
+```bash
+# CLI
+just release-cli        # Default (Fast)
+just release-cli-small  # Small
+
+# WASM (Core / Linter / Formatter)
+just release-wasm       # Default (Fast)
+just release-wasm-small # Small
+```
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -1,5 +1,5 @@
-use std::fmt::Write;
 use crate::ir::*;
+use std::fmt::Write;
 
 pub struct Renderer {
     width: u32,
@@ -55,8 +55,7 @@ impl Renderer {
         let _ = write!(
             &mut court,
             "<svg width=\"{}\" height=\"{}\" viewBox=\"-105 -105 210 210\" xmlns=\"http://www.w3.org/2000/svg\">",
-            self.width,
-            self.height
+            self.width, self.height
         );
 
         // 0. Global Background (White fill for everything)
@@ -292,22 +291,22 @@ impl Renderer {
     fn render_player(&self, entity: &Entity) -> String {
         let mut player = String::new();
         let _ = write!(
-                &mut player,
-                "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
-                entity.start_pos.0, entity.start_pos.1
-            );
+            &mut player,
+            "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
+            entity.start_pos.0, entity.start_pos.1
+        );
         let _ = write!(
-                &mut player,
-                "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
-                entity.start_pos.0, entity.start_pos.1, entity.label
-            );
+            &mut player,
+            "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
+            entity.start_pos.0, entity.start_pos.1, entity.label
+        );
 
         if entity.is_baller {
             let _ = write!(
-                    &mut player,
-                    "<circle cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"orange\" stroke=\"black\" stroke-width=\"1\" transform=\"translate(10, -10)\" />",
-                    entity.start_pos.0, entity.start_pos.1
-                );
+                &mut player,
+                "<circle cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"orange\" stroke=\"black\" stroke-width=\"1\" transform=\"translate(10, -10)\" />",
+                entity.start_pos.0, entity.start_pos.1
+            );
         }
 
         player

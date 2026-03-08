@@ -1,3 +1,7 @@
+[group("rust")]
+bench:
+    @cargo bench -p playbook-cli
+
 # help
 [group("misc")]
 default:
@@ -50,15 +54,41 @@ ci: fmt lint ut
 convert input_path="fixtures/canvas/input.playbook":
     @cargo run -p playbook-cli -- {{input_path}}
 
-# build cli
+# build cli (fast - default)
 release-cli:
     @cargo build --release -p playbook-cli
     @mkdir -p build
     @cp ./target/release/playbook-cli build/
 
+# build cli (small)
+release-cli-small:
+    @cargo build --profile release-small -p playbook-cli
+    @mkdir -p build
+    @cp ./target/release-small/playbook-cli build/playbook-cli-small
+
 [working-directory("core")]
 release-wasm:
-    @wasm-pack build --target web
+    @wasm-pack build --target web --release
+
+[working-directory("core")]
+release-wasm-small:
+    @RUSTFLAGS="-C opt-level=z" wasm-pack build --target web --release
+
+[working-directory("linter")]
+release-wasm-linter:
+    @wasm-pack build --target web --release
+
+[working-directory("linter")]
+release-wasm-linter-small:
+    @RUSTFLAGS="-C opt-level=z" wasm-pack build --target web --release
+
+[working-directory("formatter")]
+release-wasm-formatter:
+    @wasm-pack build --target web --release
+
+[working-directory("formatter")]
+release-wasm-formatter-small:
+    @RUSTFLAGS="-C opt-level=z" wasm-pack build --target web --release
 
 [group("node")]
 [working-directory("code-mirror")]
