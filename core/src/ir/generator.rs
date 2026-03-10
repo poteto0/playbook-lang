@@ -175,6 +175,7 @@ impl IRGenerator {
         Ok(Scene {
             entities,
             interactions,
+            final_baller: current_baller,
         })
     }
 }
@@ -234,6 +235,7 @@ mod tests {
         assert_eq!(p2_entity.start_pos, (10.0, 10.0));
         assert_eq!(p2_entity.end_pos, (20.0, 20.0));
         assert!(p1_entity.is_baller);
+        assert_eq!(scene.final_baller, Some("p2".to_string()));
     }
 
     #[test]

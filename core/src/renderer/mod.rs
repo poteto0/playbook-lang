@@ -13,6 +13,89 @@ impl Default for Renderer {
 }
 
 impl Renderer {
+    pub fn play(&self, input: &str) -> Result<String, String> {
+        use crate::ir::IRGenerator;
+        use crate::lexer::Lexer;
+        use crate::parser::{ParseError, Parser};
+
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+
+        let (playbook, errors) = parser.parse();
+
+        if !errors.is_empty() {
+            let error_jsons: Vec<String> = errors
+                .iter()
+                .map(|e| match e {
+                    ParseError::UnexpectedToken(token, msg)
+                    | ParseError::InvalidSyntax(token, msg) => {
+                        format!(
+                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
+                            token.span.line,
+                            token.span.column,
+                            token.span.len(),
+                            msg,
+                        )
+                    }
+                    ParseError::UnexpectedEOF => format!(
+                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
+                        0, 0, 0, "Unexpected end of file"
+                    ),
+                })
+                .collect();
+
+            return Err(format!("[Error]:[{}]", error_jsons.join(", ")));
+        }
+
+        match IRGenerator::generate(playbook) {
+            Ok(scene) => {
+                let mut output = String::new();
+
+                // players
+                let player_ids: Vec<String> = scene.entities.iter().map(|e| e.id.clone()).collect();
+                output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
+
+                // state
+                output.push_str("state = {\n");
+                if let Some(baller) = &scene.final_baller {
+                    output.push_str(&format!("  baller = {},\n", baller));
+                }
+
+                output.push_str("  position = {\n");
+                for entity in &scene.entities {
+                    output.push_str(&format!(
+                        "    {} = ({}, {}),\n",
+                        entity.id, entity.end_pos.0, entity.end_pos.1
+                    ));
+                }
+                output.push_str("  },\n");
+                output.push_str("}\n");
+
+                Ok(output)
+            }
+            Err(e) => {
+                let error_msg = match e {
+                    crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\"}}]",
+                        span.line,
+                        span.column,
+                        span.len(),
+                        name,
+                    ),
+                    crate::ir::IRError::PlayerNotBaller(span, name) => format!(
+                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\"}}]",
+                        span.line,
+                        span.column,
+                        span.len(),
+                        name
+                    ),
+                };
+                Err(error_msg)
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             width: 500,

@@ -33,6 +33,11 @@ enum Commands {
         /// Input .playbook file
         input: PathBuf,
     },
+    /// Get final player positions (outputs to stdout as JSON)
+    Play {
+        /// Input .playbook file
+        input: PathBuf,
+    },
 }
 
 fn main() {
@@ -72,6 +77,21 @@ fn main() {
             for output in linter_outputs.iter() {
                 println!("lint error [{}]: {}", output.severity, output.message);
                 println!("line: {}, column: {}", output.line, output.column);
+            }
+        }
+        Commands::Play { input } => {
+            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
+            let renderer = Renderer::new();
+            let result = renderer.play(&input_content);
+
+            match result {
+                Ok(json) => {
+                    println!("{}", json);
+                }
+                Err(e) => {
+                    eprintln!("Compile Error:\n{}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

@@ -14,3 +14,9 @@ pub fn render_playbook(input: &str) -> Result<String, JsValue> {
     let renderer = Renderer::new();
     renderer.render(input).map_err(|e| JsValue::from_str(&e))
 }
+
+#[wasm_bindgen]
+pub fn play_playbook(input: &str) -> Result<String, JsValue> {
+    let renderer = Renderer::new();
+    renderer.play(input).map_err(|e| JsValue::from_str(&e))
+}
