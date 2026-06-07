@@ -465,6 +465,19 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_number_is_error() {
+        // "5-3" must not silently become 0.0 (issue #48)
+        for input in ["5-3", "1.2.3"] {
+            let mut lexer = Lexer::new(input);
+            let tokens = lexer.tokenize();
+            match &tokens[0].kind {
+                TokenKind::Error(msg) => assert!(msg.contains("Invalid number")),
+                other => panic!("Expected Error token for '{}', got {:?}", input, other),
+            }
+        }
+    }
+
+    #[test]
     fn test_input_too_large() {
         let input = "a".repeat(100 * 1024 + 1);
         let mut lexer = Lexer::new(&input);
