@@ -156,7 +156,7 @@ impl<'a> Lexer<'a> {
         self.input[start..self.pos].to_string()
     }
 
-    fn read_number(&mut self) -> f64 {
+    fn read_number(&mut self) -> TokenKind {
         let start = self.pos;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == '.' || c == '-' {
@@ -165,7 +165,11 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        self.input[start..self.pos].parse().unwrap_or(0.0)
+        let raw = &self.input[start..self.pos];
+        match raw.parse() {
+            Ok(n) => TokenKind::Number(n),
+            Err(_) => TokenKind::Error(format!("Invalid number: '{}'", raw)),
+        }
     }
 
     fn read_comment(&mut self) -> String {
@@ -262,7 +266,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     TokenKind::Arrow
                 } else if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                    TokenKind::Number(self.read_number())
+                    self.read_number()
                 } else {
                     let next_char_is_digit = self.input[self.pos + 1..]
                         .chars()
@@ -270,7 +274,7 @@ impl<'a> Lexer<'a> {
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false);
                     if next_char_is_digit {
-                        TokenKind::Number(self.read_number())
+                        self.read_number()
                     } else {
                         self.advance();
                         TokenKind::Identifier("-".to_string())
@@ -313,7 +317,7 @@ impl<'a> Lexer<'a> {
                     TokenKind::Identifier("/".to_string())
                 }
             }
-            _ if c.is_ascii_digit() => TokenKind::Number(self.read_number()),
+            _ if c.is_ascii_digit() => self.read_number(),
             _ if c.is_alphabetic() => {
                 let ident = self.read_identifier();
                 match ident.as_str() {
