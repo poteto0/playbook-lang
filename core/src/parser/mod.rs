@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::constants::DEFAULT_BEZIER_CURVE_FACTOR;
+use crate::constants::{DEFAULT_BEZIER_CURVE_FACTOR, MAX_ACTIONS_PER_PHASE};
 use crate::lexer::{Span, Token, TokenKind};
 
 #[derive(Debug, Clone)]
@@ -330,10 +330,10 @@ impl Parser {
                 continue;
             }
 
-            if actions.len() >= 3 {
+            if actions.len() >= MAX_ACTIONS_PER_PHASE {
                 self.error(ParseError::InvalidSyntax(
                     self.peek().clone(),
-                    "Maximum of 3 actions allowed".to_string(),
+                    format!("Maximum of {MAX_ACTIONS_PER_PHASE} actions allowed"),
                 ));
             }
 

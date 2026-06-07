@@ -265,20 +265,16 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
                     TokenKind::Arrow
-                } else if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                } else if self.input[self.pos + 1..]
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     self.read_number()
                 } else {
-                    let next_char_is_digit = self.input[self.pos + 1..]
-                        .chars()
-                        .next()
-                        .map(|c| c.is_ascii_digit())
-                        .unwrap_or(false);
-                    if next_char_is_digit {
-                        self.read_number()
-                    } else {
-                        self.advance();
-                        TokenKind::Identifier("-".to_string())
-                    }
+                    self.advance();
+                    TokenKind::Identifier("-".to_string())
                 }
             }
             '~' => {
