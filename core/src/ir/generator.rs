@@ -1,7 +1,38 @@
 use crate::ast::{PathType, Playbook, ScreenTarget, Timing};
 use crate::ir::*;
+use crate::lexer::Span;
+use std::collections::HashMap;
 
 pub struct IRGenerator;
+
+/// Resolves a player's position for a given timing relative to a phase.
+///
+/// `Before` uses the phase's start positions, `After`/`None` its end
+/// positions, and `Middle` the average of the two.
+fn resolve_timed_position(
+    timing: Timing,
+    player_id: &str,
+    span: Span,
+    start_positions: &HashMap<String, (f64, f64)>,
+    end_positions: &HashMap<String, (f64, f64)>,
+) -> Result<(f64, f64), IRError> {
+    let lookup = |positions: &HashMap<String, (f64, f64)>| {
+        positions
+            .get(player_id)
+            .copied()
+            .ok_or_else(|| IRError::UnexpectedPlayer(span, player_id.to_string()))
+    };
+
+    match timing {
+        Timing::Before => lookup(start_positions),
+        Timing::After | Timing::None => lookup(end_positions),
+        Timing::Middle => {
+            let start = lookup(start_positions)?;
+            let end = lookup(end_positions)?;
+            Ok(((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0))
+        }
+    }
+}
 
 impl IRGenerator {
     pub fn generate(playbook: Playbook) -> Result<Scene, IRError> {
@@ -63,34 +94,13 @@ impl IRGenerator {
                 };
 
                 let to = match &screen.target {
-                    ScreenTarget::Player(target_id) => {
-                        let target_pos = match screen.timing {
-                            Timing::Before => phase_start_positions.get(target_id),
-                            Timing::Middle => {
-                                // Middle requires both start and end (average)
-                                // Simplified: if either missing, error.
-                                // Actually, timing logic needs access to both.
-                                None // Placeholder to force lookup below
-                            }
-                            Timing::After | Timing::None => phase_end_positions.get(target_id),
-                        };
-
-                        match screen.timing {
-                            Timing::Middle => {
-                                let start =
-                                    phase_start_positions.get(target_id).ok_or_else(|| {
-                                        IRError::UnexpectedPlayer(screen.span, target_id.clone())
-                                    })?;
-                                let end = phase_end_positions.get(target_id).ok_or_else(|| {
-                                    IRError::UnexpectedPlayer(screen.span, target_id.clone())
-                                })?;
-                                ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
-                            }
-                            _ => *target_pos.ok_or_else(|| {
-                                IRError::UnexpectedPlayer(screen.span, target_id.clone())
-                            })?,
-                        }
-                    }
+                    ScreenTarget::Player(target_id) => resolve_timed_position(
+                        screen.timing,
+                        target_id,
+                        screen.span,
+                        &phase_start_positions,
+                        &phase_end_positions,
+                    )?,
                     ScreenTarget::Coordinate(x, y) => (*x, *y),
                 };
 
@@ -117,23 +127,13 @@ impl IRGenerator {
                     .get(&pass.from)
                     .ok_or_else(|| IRError::UnexpectedPlayer(pass.span, pass.from.clone()))?;
 
-                let to = match pass.timing {
-                    Timing::Before => *phase_start_positions
-                        .get(&pass.to)
-                        .ok_or_else(|| IRError::UnexpectedPlayer(pass.span, pass.to.clone()))?,
-                    Timing::Middle => {
-                        let start = *phase_start_positions
-                            .get(&pass.to)
-                            .ok_or_else(|| IRError::UnexpectedPlayer(pass.span, pass.to.clone()))?;
-                        let end = *phase_end_positions
-                            .get(&pass.to)
-                            .ok_or_else(|| IRError::UnexpectedPlayer(pass.span, pass.to.clone()))?;
-                        ((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0)
-                    }
-                    Timing::After | Timing::None => *phase_end_positions
-                        .get(&pass.to)
-                        .ok_or_else(|| IRError::UnexpectedPlayer(pass.span, pass.to.clone()))?,
-                };
+                let to = resolve_timed_position(
+                    pass.timing,
+                    &pass.to,
+                    pass.span,
+                    &phase_start_positions,
+                    &phase_end_positions,
+                )?;
                 interactions.push(Interaction::Pass(PassLine { from, to }));
                 current_baller = Some(pass.to.clone());
             }
