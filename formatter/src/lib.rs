@@ -3,20 +3,30 @@ use playbook_lang_core::ast::{
     State, Timing,
 };
 use playbook_lang_core::lexer::{Lexer, Span};
-use playbook_lang_core::parser::Parser;
+use playbook_lang_core::parser::{ParseError, Parser};
 use std::collections::VecDeque;
 
 use wasm_bindgen::prelude::*;
 
+/// Formats the input. Returns the original input unchanged if there are parse errors.
 #[wasm_bindgen]
 pub fn format(input: &str) -> String {
+    format_checked(input).unwrap_or_else(|_| input.to_string())
+}
+
+/// Formats the input, returning parse errors if any are found.
+pub fn format_checked(input: &str) -> Result<String, Vec<ParseError>> {
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
-    let (playbook, _errors) = parser.parse();
+    let (playbook, errors) = parser.parse();
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
     let mut formatter = Formatter::new(playbook);
-    formatter.format()
+    Ok(formatter.format())
 }
 
 struct Formatter {
@@ -340,5 +350,18 @@ action = {
         let first_pass = format(input);
         let second_pass = format(&first_pass);
         assert_eq!(first_pass, second_pass, "Formatting should be idempotent");
+    }
+
+    #[test]
+    fn test_parse_error_handling() {
+        let invalid = "players = { !!!invalid";
+        assert_eq!(format(invalid), invalid);
+        assert!(format_checked(invalid).is_err());
+    }
+
+    #[test]
+    fn test_format_checked_ok_on_valid_input() {
+        let input = "action={move={p1->(10,10)}}";
+        assert!(format_checked(input).is_ok());
     }
 }
