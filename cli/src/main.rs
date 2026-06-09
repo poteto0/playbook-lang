@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use playbook_lang_core::Renderer;
-use playbook_lang_formatter::format;
+use playbook_lang_formatter::format_checked;
 use playbook_lang_linter::lint;
 use std::fs;
 use std::path::PathBuf;
@@ -68,8 +68,15 @@ fn main() {
         }
         Commands::Fmt { input } => {
             let input_content = fs::read_to_string(&input).expect("Failed to read input file");
-            let formatted = format(&input_content);
-            print!("{}", formatted);
+            match format_checked(&input_content) {
+                Ok(formatted) => print!("{}", formatted),
+                Err(errors) => {
+                    for e in &errors {
+                        eprintln!("{}: parse error: {}", input.display(), e);
+                    }
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Lint { input } => {
             let input_content = fs::read_to_string(&input).expect("Failed to read input file");

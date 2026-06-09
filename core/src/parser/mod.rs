@@ -1,12 +1,31 @@
 use crate::ast::*;
 use crate::constants::{DEFAULT_BEZIER_CURVE_FACTOR, MAX_ACTIONS_PER_PHASE};
 use crate::lexer::{Span, Token, TokenKind};
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
     UnexpectedToken(Token, String),
     UnexpectedEOF,
     InvalidSyntax(Token, String),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::UnexpectedToken(token, msg) => write!(
+                f,
+                "unexpected token at line {}, column {}: {}",
+                token.span.line, token.span.column, msg
+            ),
+            ParseError::UnexpectedEOF => write!(f, "unexpected end of input"),
+            ParseError::InvalidSyntax(token, msg) => write!(
+                f,
+                "invalid syntax at line {}, column {}: {}",
+                token.span.line, token.span.column, msg
+            ),
+        }
+    }
 }
 
 pub struct Parser {
