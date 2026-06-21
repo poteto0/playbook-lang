@@ -5,6 +5,12 @@ use std::collections::HashMap;
 
 pub struct IRGenerator;
 
+/// Derives an entity's display label from its player id by stripping a single
+/// leading `p` (e.g. `p1` -> `1`). Ids without the prefix are kept verbatim.
+fn player_label(player_id: &str) -> &str {
+    player_id.strip_prefix('p').unwrap_or(player_id)
+}
+
 /// Resolves a player's position for a given timing relative to a phase.
 ///
 /// `Before` uses the phase's start positions, `After`/`None` its end
@@ -165,7 +171,7 @@ impl IRGenerator {
 
             entities.push(Entity {
                 id: player_id.clone(),
-                label: player_id.replace("p", ""), // p1 -> 1
+                label: player_label(&player_id).to_string(),
                 start_pos,
                 end_pos,
                 is_baller,
@@ -299,5 +305,46 @@ mod tests {
             IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "p99"),
             _ => panic!("Expected UnexpectedPlayer"),
         }
+    }
+
+    #[test]
+    fn test_label_strips_only_leading_p() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 0.0));
+        positions.insert("player3".to_string(), (1.0, 1.0));
+        positions.insert("pp7".to_string(), (2.0, 2.0));
+        positions.insert("top".to_string(), (3.0, 3.0));
+
+        let playbook = Playbook {
+            players: vec![
+                "p1".to_string(),
+                "player3".to_string(),
+                "pp7".to_string(),
+                "top".to_string(),
+            ],
+            state: State {
+                baller: Some("p1".to_string()),
+                positions,
+            },
+            actions: vec![],
+            comments: vec![],
+        };
+
+        let scene = IRGenerator::generate(playbook).unwrap();
+
+        let label = |id: &str| {
+            scene
+                .entities
+                .iter()
+                .find(|e| e.id == id)
+                .unwrap()
+                .label
+                .clone()
+        };
+
+        assert_eq!(label("p1"), "1");
+        assert_eq!(label("player3"), "layer3");
+        assert_eq!(label("pp7"), "p7");
+        assert_eq!(label("top"), "top");
     }
 }
