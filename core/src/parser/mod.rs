@@ -106,6 +106,18 @@ impl Parser {
         }
     }
 
+    fn peek_span(&self) -> Span {
+        self.tokens
+            .get(self.pos)
+            .map(|token| token.span)
+            .unwrap_or(Span {
+                start: 0,
+                end: 0,
+                line: 0,
+                column: 0,
+            })
+    }
+
     fn advance(&mut self) -> Token {
         let token = self.peek();
         if self.pos < self.tokens.len() {
@@ -511,6 +523,7 @@ impl Parser {
                             && self.peek().kind != TokenKind::EOF
                         {
                             // Try parsing a move line: player -> target
+                            let span = self.peek_span();
                             match self.expect_identifier() {
                                 Ok(player) => match self.expect_arrow() {
                                     Ok(path_type) => match self.parse_coordinate() {
@@ -519,7 +532,7 @@ impl Parser {
                                                 player,
                                                 target,
                                                 path_type,
-                                                span: self.peek().clone().span,
+                                                span,
                                             });
                                         }
                                         Err(e) => self.error(e),
@@ -546,6 +559,7 @@ impl Parser {
                         while self.peek().kind != TokenKind::RBrace
                             && self.peek().kind != TokenKind::EOF
                         {
+                            let span = self.peek_span();
                             match self.expect_identifier() {
                                 Ok(player) => match self.expect_arrow() {
                                     Ok(path_type) => {
@@ -588,7 +602,7 @@ impl Parser {
                                                     target,
                                                     timing,
                                                     path_type,
-                                                    span: self.peek().clone().span,
+                                                    span,
                                                 });
                                             }
                                             Err(e) => self.error(e),
@@ -616,6 +630,7 @@ impl Parser {
                         while self.peek().kind != TokenKind::RBrace
                             && self.peek().kind != TokenKind::EOF
                         {
+                            let span = self.peek_span();
                             match self.expect_identifier() {
                                 Ok(from) => {
                                     if let Err(e) = self.expect_and_advance(TokenKind::Arrow) {
@@ -647,7 +662,7 @@ impl Parser {
                                                     from,
                                                     to,
                                                     timing,
-                                                    span: self.peek().clone().span,
+                                                    span,
                                                 });
                                             }
                                             Err(e) => self.error(e),
@@ -897,5 +912,20 @@ mod tests {
             _ => false,
         });
         assert!(found);
+    }
+
+    #[test]
+    fn test_action_span_points_to_player_token() {
+        // The player identifier starts at line 4, column 1.
+        // Before the fix, the span pointed at the trailing comma instead.
+        let input = "players = { p1 }\nstate = { position = { p1 = (0, 0) } }\nactions = [ action = { move = {\np1 -> (5, 5),\n} } ]";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, _) = parser.parse();
+
+        let span = playbook.actions[0].moves[0].span;
+        assert_eq!(span.line, 4);
+        assert_eq!(span.column, 1);
     }
 }
