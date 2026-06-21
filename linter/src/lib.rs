@@ -94,14 +94,13 @@ mod tests {
 
     #[test]
     fn test_lint_error_invalid_syntax() {
-        // Curve factor too long triggers InvalidSyntax
-        let input = "players={p1} state={} action={ move={ p1 ~[l:0.1234]> (0,0) } }";
+        // A non-numeric curve factor triggers InvalidSyntax
+        let input = "players={p1} state={} action={ move={ p1 ~[l:abc]> (0,0) } }";
         let diagnostics = lint_playbook_internal(input);
         assert!(!diagnostics.is_empty());
-        let found = diagnostics.iter().any(|d| {
-            d.message
-                .contains("Curve factor must be at most 3 characters")
-        });
+        let found = diagnostics
+            .iter()
+            .any(|d| d.message.contains("Invalid curve factor"));
         assert!(
             found,
             "Expected error message not found in diagnostics: {:?}",

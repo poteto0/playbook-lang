@@ -469,21 +469,19 @@ impl Parser {
                 let dir_str = parts[0];
                 let factor = if parts.len() > 1 {
                     let factor_str = parts[1];
-                    if factor_str.len() > 3 {
-                        return Err(ParseError::InvalidSyntax(
-                            token.clone(),
-                            format!(
-                                "Curve factor must be at most 3 characters (e.g. 0.5): {}",
-                                factor_str
-                            ),
-                        ));
-                    }
-                    factor_str.parse::<f64>().map_err(|_| {
+                    let value = factor_str.parse::<f64>().map_err(|_| {
                         ParseError::InvalidSyntax(
                             token.clone(),
                             format!("Invalid curve factor: {}", factor_str),
                         )
-                    })?
+                    })?;
+                    if !value.is_finite() {
+                        return Err(ParseError::InvalidSyntax(
+                            token.clone(),
+                            format!("Curve factor must be a finite number: {}", factor_str),
+                        ));
+                    }
+                    value
                 } else {
                     DEFAULT_BEZIER_CURVE_FACTOR
                 };
@@ -834,13 +832,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_invalid_curve_factor_length() {
+    fn test_parse_curve_factor_multi_digit_and_negative() {
+        // Values longer than 3 characters (0.25, -0.5) used to be rejected by an
+        // arbitrary byte-length check. They are valid coefficients and must parse.
         let input = r#"
         players = { p1 }
         state = { }
         action = {
             move = {
-                p1 ~[l:0.15]> (10, 10)
+                p1 ~[l:0.25]> (10, 10),
+                p1 ~[r:-0.5]> (20, 20)
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+        match playbook.actions[0].moves[0].path_type {
+            PathType::Curve(CurveDirection::Left(f)) => assert_eq!(f, 0.25),
+            _ => panic!("Expected Left Curve with 0.25"),
+        }
+        match playbook.actions[0].moves[1].path_type {
+            PathType::Curve(CurveDirection::Right(f)) => assert_eq!(f, -0.5),
+            _ => panic!("Expected Right Curve with -0.5"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_curve_factor() {
+        let input = r#"
+        players = { p1 }
+        state = { }
+        action = {
+            move = {
+                p1 ~[l:abc]> (10, 10)
             },
         }
         "#;
@@ -857,9 +886,7 @@ mod tests {
 
         // At least one should be the specific error
         let found = errors.iter().any(|e| match e {
-            ParseError::InvalidSyntax(_, msg) => {
-                msg.contains("Curve factor must be at most 3 characters")
-            }
+            ParseError::InvalidSyntax(_, msg) => msg.contains("Invalid curve factor"),
             _ => false,
         });
         assert!(found);
