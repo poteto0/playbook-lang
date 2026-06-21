@@ -334,7 +334,7 @@ impl<'a> Lexer<'a> {
             }
             _ => {
                 self.advance();
-                TokenKind::Identifier(c.to_string())
+                TokenKind::Error(format!("Unexpected character: '{}'", c))
             }
         };
 
@@ -468,6 +468,20 @@ mod tests {
             let tokens = lexer.tokenize();
             match &tokens[0].kind {
                 TokenKind::Error(msg) => assert!(msg.contains("Invalid number")),
+                other => panic!("Expected Error token for '{}', got {:?}", input, other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_unexpected_char_is_error() {
+        // Characters outside the allowed set must not become identifiers (issue #49),
+        // otherwise they get injected unescaped into SVG/JSON output.
+        for input in ["&", "<", "\"", "'"] {
+            let mut lexer = Lexer::new(input);
+            let tokens = lexer.tokenize();
+            match &tokens[0].kind {
+                TokenKind::Error(msg) => assert!(msg.contains("Unexpected character")),
                 other => panic!("Expected Error token for '{}', got {:?}", input, other),
             }
         }

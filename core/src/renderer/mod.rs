@@ -1,5 +1,68 @@
 use crate::ir::*;
+use crate::parser::ParseError;
 use std::fmt::Write;
+
+/// Build a single error object as a JSON string using `serde_json` so that
+/// `message` (which may contain `"`, `\`, etc.) is always safely escaped.
+fn error_json(line: usize, column: usize, length: usize, message: &str) -> String {
+    serde_json::json!({
+        "line": line,
+        "column": column,
+        "length": length,
+        "message": message,
+    })
+    .to_string()
+}
+
+/// Format parser errors into the `[Error]:[...]` envelope expected by the frontend.
+fn format_parse_errors(errors: &[ParseError]) -> String {
+    let error_jsons: Vec<String> = errors
+        .iter()
+        .map(|e| match e {
+            ParseError::UnexpectedToken(token, msg) | ParseError::InvalidSyntax(token, msg) => {
+                error_json(token.span.line, token.span.column, token.span.len(), msg)
+            }
+            ParseError::UnexpectedEOF => error_json(0, 0, 0, "Unexpected end of file"),
+        })
+        .collect();
+
+    format!("[Error]:[{}]", error_jsons.join(", "))
+}
+
+/// Format an IR generation error into the `[Error]:[...]` envelope.
+fn format_ir_error(e: &IRError) -> String {
+    let json = match e {
+        IRError::UnexpectedPlayer(span, name) => error_json(
+            span.line,
+            span.column,
+            span.len(),
+            &format!("Player '{}' not found in state", name),
+        ),
+        IRError::PlayerNotBaller(span, name) => error_json(
+            span.line,
+            span.column,
+            span.len(),
+            &format!("Player '{}' does not have the ball", name),
+        ),
+    };
+    format!("[Error]:[{}]", json)
+}
+
+/// Escape characters that are unsafe in XML/SVG text and attribute values.
+fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
 pub struct Renderer {
     width: u32,
@@ -16,7 +79,7 @@ impl Renderer {
     pub fn play(&self, input: &str) -> Result<String, String> {
         use crate::ir::IRGenerator;
         use crate::lexer::Lexer;
-        use crate::parser::{ParseError, Parser};
+        use crate::parser::Parser;
 
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
@@ -25,27 +88,7 @@ impl Renderer {
         let (playbook, errors) = parser.parse();
 
         if !errors.is_empty() {
-            let error_jsons: Vec<String> = errors
-                .iter()
-                .map(|e| match e {
-                    ParseError::UnexpectedToken(token, msg)
-                    | ParseError::InvalidSyntax(token, msg) => {
-                        format!(
-                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
-                            token.span.line,
-                            token.span.column,
-                            token.span.len(),
-                            msg,
-                        )
-                    }
-                    ParseError::UnexpectedEOF => format!(
-                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
-                        0, 0, 0, "Unexpected end of file"
-                    ),
-                })
-                .collect();
-
-            return Err(format!("[Error]:[{}]", error_jsons.join(", ")));
+            return Err(format_parse_errors(&errors));
         }
 
         match IRGenerator::generate(playbook) {
@@ -74,25 +117,7 @@ impl Renderer {
 
                 Ok(output)
             }
-            Err(e) => {
-                let error_msg = match e {
-                    crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\"}}]",
-                        span.line,
-                        span.column,
-                        span.len(),
-                        name,
-                    ),
-                    crate::ir::IRError::PlayerNotBaller(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\"}}]",
-                        span.line,
-                        span.column,
-                        span.len(),
-                        name
-                    ),
-                };
-                Err(error_msg)
-            }
+            Err(e) => Err(format_ir_error(&e)),
         }
     }
 
@@ -381,7 +406,7 @@ impl Renderer {
         let _ = write!(
             &mut player,
             "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
-            entity.start_pos.0, entity.start_pos.1, entity.label
+            entity.start_pos.0, entity.start_pos.1, escape_xml(&entity.label)
         );
 
         if entity.is_baller {
@@ -398,7 +423,7 @@ impl Renderer {
     pub fn render(&self, input: &str) -> Result<String, String> {
         use crate::ir::IRGenerator;
         use crate::lexer::Lexer;
-        use crate::parser::{ParseError, Parser};
+        use crate::parser::Parser;
 
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
@@ -407,50 +432,12 @@ impl Renderer {
         let (playbook, errors) = parser.parse();
 
         if !errors.is_empty() {
-            let error_jsons: Vec<String> = errors
-                .iter()
-                .map(|e| match e {
-                    ParseError::UnexpectedToken(token, msg)
-                    | ParseError::InvalidSyntax(token, msg) => {
-                        format!(
-                            "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
-                            token.span.line,
-                            token.span.column,
-                            token.span.len(),
-                            msg,
-                        )
-                    }
-                    ParseError::UnexpectedEOF => format!(
-                        "{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"{}\"}}",
-                        0, 0, 0, "Unexpected end of file"
-                    ),
-                })
-                .collect();
-
-            return Err(format!("[Error]:[{}]", error_jsons.join(", ")));
+            return Err(format_parse_errors(&errors));
         }
 
         match IRGenerator::generate(playbook) {
             Ok(scene) => Ok(self.render_scene(&scene)),
-            Err(e) => {
-                let error_msg = match e {
-                    crate::ir::IRError::UnexpectedPlayer(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' not found in state\"}}]",
-                        span.line,
-                        span.column,
-                        span.len(),
-                        name,
-                    ),
-                    crate::ir::IRError::PlayerNotBaller(span, name) => format!(
-                        "[Error]:[{{\"line\":{}, \"column\":{}, \"length\":{}, \"message\":\"Player '{}' does not have the ball\"}}]",
-                        span.line,
-                        span.column,
-                        span.len(),
-                        name
-                    ),
-                };
-                Err(error_msg)
-            }
+            Err(e) => Err(format_ir_error(&e)),
         }
     }
 }
@@ -505,5 +492,45 @@ mod tests {
         let input = "aciton = { }"; // typo: action
         let output = renderer.render(input).unwrap_err();
         assert!(output.contains("Did you mean 'action'?"));
+    }
+
+    #[test]
+    fn test_escape_xml_escapes_unsafe_chars() {
+        assert_eq!(
+            escape_xml(r#"<script>&"'"#),
+            "&lt;script&gt;&amp;&quot;&apos;"
+        );
+        assert_eq!(escape_xml("plain"), "plain");
+    }
+
+    #[test]
+    fn test_render_player_escapes_label() {
+        let renderer = Renderer::new();
+        let entity = Entity {
+            id: "p1".to_string(),
+            label: "<tspan onload=\"x\">".to_string(),
+            start_pos: (0.0, 0.0),
+            end_pos: (0.0, 0.0),
+            is_baller: false,
+        };
+        let svg = renderer.render_player(&entity);
+        // The raw injection must not appear; it must be escaped instead.
+        assert!(!svg.contains("<tspan"));
+        assert!(svg.contains("&lt;tspan onload=&quot;x&quot;&gt;"));
+    }
+
+    #[test]
+    fn test_error_message_is_valid_json() {
+        // A lexer error message containing a `"` must be escaped so the
+        // resulting `[Error]:[...]` payload stays parseable JSON.
+        let renderer = Renderer::new();
+        let input = r#"players = { ~[a"b] }"#;
+        let err = renderer.render(input).unwrap_err();
+        let json = err
+            .strip_prefix("[Error]:[")
+            .and_then(|s| s.strip_suffix("]"))
+            .expect("error envelope");
+        let parsed: serde_json::Value = serde_json::from_str(json).expect("valid JSON object");
+        assert!(parsed.get("message").is_some());
     }
 }
