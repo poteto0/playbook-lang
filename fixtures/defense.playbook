@@ -1,0 +1,25 @@
+players = { p1, p2, p3 }
+defenders = { d1, d2 }
+
+state = {
+  baller = p1,
+  position = {
+    p1 = (0, 60),
+    p2 = (60, -30),
+    p3 = (-60, -30),
+  },
+  defense = {
+    d1 -> p2,
+    d2 = (-40, -60),
+  },
+}
+
+action = {
+  move = {
+    p1 -> (0, 0),
+  },
+  defense = {
+    d1 -[15]> p1,
+    d2 -> (40, -60),
+  },
+}
