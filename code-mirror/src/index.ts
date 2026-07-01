@@ -6,7 +6,7 @@ export const playbookLanguage = LRLanguage.define({
   parser: parser.configure({
     props: [
       styleTags({
-        "players state baller position action actions move screen pass before after middle":
+        "players defenders state baller position defense action actions move screen pass before after middle":
           t.keyword,
         Identifier: t.variableName,
         Number: t.number,
@@ -15,7 +15,7 @@ export const playbookLanguage = LRLanguage.define({
         "{ } [ ] ( )": t.paren,
         ",": t.separator,
         ":": t.punctuation,
-        "-> ~> CurveArrow": t.operator,
+        "-> ~> CurveArrow OffsetArrow": t.operator,
         LineComment: t.lineComment,
       }),
     ],

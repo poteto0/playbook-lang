@@ -1,6 +1,6 @@
 use playbook_lang_core::ast::{
-    Action, CurveDirection, MoveAction, PassAction, PathType, Playbook, ScreenAction, ScreenTarget,
-    State, Timing,
+    Action, CurveDirection, DefenseAction, DefenseTarget, MoveAction, PassAction, PathType,
+    Playbook, ScreenAction, ScreenTarget, State, Timing,
 };
 use playbook_lang_core::lexer::{Lexer, Span};
 use playbook_lang_core::parser::{ParseError, Parser};
@@ -50,10 +50,12 @@ impl Formatter {
 
     fn format(&mut self) -> String {
         let players = self.playbook.players.clone();
+        let defenders = self.playbook.defenders.clone();
         let state = self.playbook.state.clone();
         let actions = self.playbook.actions.clone();
 
         self.format_players(players);
+        self.format_defenders(defenders);
         self.format_state(state);
         self.format_actions(actions);
 
@@ -101,6 +103,30 @@ impl Formatter {
         self.push_str(" }\n\n");
     }
 
+    fn format_defenders(&mut self, defenders: Vec<String>) {
+        if defenders.is_empty() {
+            return;
+        }
+
+        if let Some((span, _)) = self.comments.front() {
+            self.flush_comments(span.start + 1);
+        }
+
+        self.push_str("defenders = { ");
+        self.push_str(&defenders.join(", "));
+        self.push_str(" }\n\n");
+    }
+
+    /// Formats a single `defense` entry's target: a fixed position (using
+    /// `coord_op`, which differs between `state` (`=`) and `action` (`->`))
+    /// or a player mark, always spelled out explicitly (`-[offset]>`).
+    fn format_defense_target(&self, target: &DefenseTarget, coord_op: &str) -> String {
+        match target {
+            DefenseTarget::Position(x, y) => format!("{} ({}, {})", coord_op, x, y),
+            DefenseTarget::Mark { player, offset } => format!("-[{}]> {}", offset, player),
+        }
+    }
+
     fn format_state(&mut self, state: State) {
         self.push_str("state = {\n");
         self.indent_level += 1;
@@ -123,6 +149,27 @@ impl Formatter {
                 let (x, y) = state.positions.get(player).unwrap();
                 self.push_str(&self.indent());
                 self.push_str(&format!("{} = ({}, {}),\n", player, x, y));
+            }
+
+            self.indent_level -= 1;
+            self.push_str(&self.indent());
+            self.push_str("},\n");
+        }
+
+        if !state.defense.is_empty() {
+            self.push_str(&self.indent());
+            self.push_str("defense = {\n");
+            self.indent_level += 1;
+
+            let mut sorted_defenders: Vec<_> = state.defense.keys().collect();
+            sorted_defenders.sort();
+            for defender in sorted_defenders {
+                let (target, _) = state.defense.get(defender).unwrap();
+                self.push_str(&self.indent());
+                self.push_str(defender);
+                self.push_str(" ");
+                self.push_str(&self.format_defense_target(target, "="));
+                self.push_str(",\n");
             }
 
             self.indent_level -= 1;
@@ -171,6 +218,7 @@ impl Formatter {
         self.format_moves(&action.moves);
         self.format_screens(&action.screens);
         self.format_passes(&action.passes);
+        self.format_defenses(&action.defenses);
     }
 
     fn format_moves(&mut self, moves: &[MoveAction]) {
@@ -240,6 +288,27 @@ impl Formatter {
             self.push_str(&p.to);
             let timing_str = self.format_timing(&p.timing);
             self.push_str(&timing_str);
+            self.push_str(",\n");
+        }
+        self.indent_level -= 1;
+        self.push_str(&self.indent());
+        self.push_str("},\n");
+    }
+
+    fn format_defenses(&mut self, defenses: &[DefenseAction]) {
+        if defenses.is_empty() {
+            return;
+        }
+
+        self.push_str(&self.indent());
+        self.push_str("defense = {\n");
+        self.indent_level += 1;
+        for d in defenses {
+            self.flush_comments(d.span.start);
+            self.push_str(&self.indent());
+            self.push_str(&d.defender);
+            self.push_str(" ");
+            self.push_str(&self.format_defense_target(&d.target, "->"));
             self.push_str(",\n");
         }
         self.indent_level -= 1;
@@ -363,5 +432,59 @@ action = {
     fn test_format_checked_ok_on_valid_input() {
         let input = "action={move={p1->(10,10)}}";
         assert!(format_checked(input).is_ok());
+    }
+
+    #[test]
+    fn test_format_defenders_and_defense() {
+        let input = "players={p1}defenders={d1,d2}state={position={p1=(0,60)}defense={d1->p1,d2=(-90,-80)}}action={defense={d1-[5]>p1,d2->(70,20)}}";
+        let expected = r#"players = { p1 }
+
+defenders = { d1, d2 }
+
+state = {
+  position = {
+    p1 = (0, 60),
+  },
+  defense = {
+    d1 -[20]> p1,
+    d2 = (-90, -80),
+  },
+}
+
+action = {
+  defense = {
+    d1 -[5]> p1,
+    d2 -> (70, 20),
+  },
+}
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_defenders_flushes_leading_comment() {
+        // With no `players` section, `format_defenders` must flush a
+        // top-of-file comment itself, the same way `format_players` does,
+        // instead of leaving it queued until the end of the output.
+        let input = "// setup notes\ndefenders = { d1 }\nstate = { defense = { d1 = (0, 0) } }";
+        let expected = r#"// setup notes
+defenders = { d1 }
+
+state = {
+  defense = {
+    d1 = (0, 0),
+  },
+}
+
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_defense_idempotency() {
+        let input = "defenders={d1}state={defense={d1->p1}}action={defense={d1-[3]>p1,d2->(1,1)}}";
+        let first_pass = format(input);
+        let second_pass = format(&first_pass);
+        assert_eq!(first_pass, second_pass, "Formatting should be idempotent");
     }
 }

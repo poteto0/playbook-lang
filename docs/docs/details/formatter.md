@@ -36,7 +36,8 @@ The formatter applies the following rules:
 
 - **Indentation**: 2 spaces.
 - **Players Block**: One line with spaces around braces.
-- **State Block**: Key-value pairs with each property on a new line.
+- **Defenders Block**: One line with spaces around braces, same as Players.
+- **State Block**: Key-value pairs with each property on a new line, including `defense` entries.
 - **Actions Block**: Actions are grouped and properly indented.
 - **Comments**: Preservation of comments in the appropriate sections.
 

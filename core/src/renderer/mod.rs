@@ -1,3 +1,4 @@
+use crate::geometry::normalize;
 use crate::ir::*;
 use crate::parser::ParseError;
 use std::fmt::Write;
@@ -95,9 +96,22 @@ impl Renderer {
             Ok(scene) => {
                 let mut output = String::new();
 
+                let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
+                    .entities
+                    .iter()
+                    .partition(|e| e.kind == EntityKind::Player);
+
                 // players
-                let player_ids: Vec<String> = scene.entities.iter().map(|e| e.id.clone()).collect();
+                let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
                 output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
+
+                if !defenders.is_empty() {
+                    let defender_ids: Vec<&str> = defenders.iter().map(|e| e.id.as_str()).collect();
+                    output.push_str(&format!(
+                        "defenders = {{ {} }}\n\n",
+                        defender_ids.join(", ")
+                    ));
+                }
 
                 // state
                 output.push_str("state = {\n");
@@ -106,13 +120,24 @@ impl Renderer {
                 }
 
                 output.push_str("  position = {\n");
-                for entity in &scene.entities {
+                for entity in &players {
                     output.push_str(&format!(
                         "    {} = ({}, {}),\n",
                         entity.id, entity.end_pos.0, entity.end_pos.1
                     ));
                 }
                 output.push_str("  },\n");
+
+                if !defenders.is_empty() {
+                    output.push_str("  defense = {\n");
+                    for entity in &defenders {
+                        output.push_str(&format!(
+                            "    {} = ({}, {}),\n",
+                            entity.id, entity.end_pos.0, entity.end_pos.1
+                        ));
+                    }
+                    output.push_str("  },\n");
+                }
                 output.push_str("}\n");
 
                 Ok(output)
@@ -145,6 +170,10 @@ impl Renderer {
                 Interaction::Screen(s) => {
                     svg.push_str(&self.render_screen(s));
                 }
+                Interaction::Defense(d) => {
+                    let is_last = self.is_last_move(scene, i, &d.defender_id);
+                    svg.push_str(&self.render_defense(d, is_last));
+                }
             }
         }
 
@@ -153,7 +182,7 @@ impl Renderer {
             svg.push_str(&self.render_player(entity));
         }
 
-        svg.push_str("<defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"black\" /></marker></defs>");
+        svg.push_str("<defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"black\" /></marker><marker id=\"arrowhead-defense\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"green\" /></marker></defs>");
         svg.push_str("</svg>");
         svg
     }
@@ -217,27 +246,32 @@ impl Renderer {
                     m.from.0, m.from.1, cx, cy, m.to.0, m.to.1, marker
                 )
             }
-            None => {
-                format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
-                    m.from.0, m.from.1, m.to.0, m.to.1, marker
-                )
-            }
+            None => self.render_straight_line(m.from, m.to, draw_arrow),
         }
+    }
+
+    /// A plain straight `<line>` between two points, with an optional
+    /// arrowhead marker at the end. Shared by straight moves and defense
+    /// movement lines.
+    fn render_straight_line(&self, from: (f64, f64), to: (f64, f64), draw_arrow: bool) -> String {
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead)\""
+        } else {
+            ""
+        };
+        format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
+            from.0, from.1, to.0, to.1, marker
+        )
     }
 
     fn render_dribble(&self, m: &MoveLine, draw_arrow: bool) -> String {
         let dx = m.to.0 - m.from.0;
         let dy = m.to.1 - m.from.1;
-        let dist = (dx * dx + dy * dy).sqrt();
 
-        if dist < 1.0 {
+        let Some((ux, uy, dist)) = normalize(dx, dy, 1.0) else {
             return "".to_string(); // Too short
-        }
-
-        // Normalize direction
-        let ux = dx / dist;
-        let uy = dy / dist;
+        };
 
         // Perpendicular vector
         let px = -uy;
@@ -318,6 +352,18 @@ impl Renderer {
         (mid_x + nx * factor, mid_y + ny * factor)
     }
 
+    fn render_defense(&self, d: &DefenseLine, draw_arrow: bool) -> String {
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead-defense)\""
+        } else {
+            ""
+        };
+        format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"green\" stroke-width=\"1\"{} />",
+            d.from.0, d.from.1, d.to.0, d.to.1, marker
+        )
+    }
+
     fn render_pass(&self, p: &PassLine) -> String {
         format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" stroke-dasharray=\"4\" marker-end=\"url(#arrowhead)\" />",
@@ -328,14 +374,11 @@ impl Renderer {
     fn render_screen(&self, s: &ScreenLine) -> String {
         let dx = s.to.0 - s.from.0;
         let dy = s.to.1 - s.from.1;
-        let len = (dx * dx + dy * dy).sqrt();
 
         // Normalized direction. Default to (0, 1) (downward) if stationary.
-        let (nx, ny) = if len > 0.001 {
-            (dx / len, dy / len)
-        } else {
-            (0.0, 1.0)
-        };
+        let (nx, ny) = normalize(dx, dy, 0.001)
+            .map(|(ux, uy, _)| (ux, uy))
+            .unwrap_or((0.0, 1.0));
 
         // Offset the screen position slightly towards the screener (from)
         let shift_amount = 5.0;
@@ -390,6 +433,7 @@ impl Renderer {
             match &scene.interactions[i] {
                 Interaction::Move(m) if m.player_id == player_id => return false,
                 Interaction::Screen(s) if s.screener_id == player_id => return false,
+                Interaction::Defense(d) if d.defender_id == player_id => return false,
                 _ => {}
             }
         }
@@ -398,6 +442,18 @@ impl Renderer {
 
     fn render_player(&self, entity: &Entity) -> String {
         let mut player = String::new();
+
+        if entity.kind == EntityKind::Defender {
+            let _ = write!(
+                &mut player,
+                "<text x=\"{}\" y=\"{}\" font-size=\"18\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
+                entity.start_pos.0,
+                entity.start_pos.1,
+                escape_xml(&entity.label)
+            );
+            return player;
+        }
+
         let _ = write!(
             &mut player,
             "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
@@ -406,7 +462,9 @@ impl Renderer {
         let _ = write!(
             &mut player,
             "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
-            entity.start_pos.0, entity.start_pos.1, escape_xml(&entity.label)
+            entity.start_pos.0,
+            entity.start_pos.1,
+            escape_xml(&entity.label)
         );
 
         if entity.is_baller {
@@ -476,6 +534,48 @@ mod tests {
     }
 
     #[test]
+    fn test_render_defender() {
+        let renderer = Renderer::new();
+        let input = r#"
+            players = { p1 }
+            defenders = { d1 }
+            state = {
+                position = { p1 = (0, 60) },
+                defense = { d1 -> p1 },
+            }
+            action = {
+                defense = { d1 -[5]> p1 },
+            }
+        "#;
+        let output = renderer.render(input).expect("Failed to render");
+        // Defender label "x" is drawn, without a ball marker.
+        assert!(output.contains(">x<"));
+        // A defense movement line is drawn between the two marked positions,
+        // thinner and green to distinguish it from player move lines.
+        assert!(output.contains(
+            "<line x1=\"0\" y1=\"40\" x2=\"0\" y2=\"55\" stroke=\"green\" stroke-width=\"1\" marker-end=\"url(#arrowhead-defense)\" />"
+        ));
+    }
+
+    #[test]
+    fn test_play_reports_defenders_separately_from_players() {
+        let renderer = Renderer::new();
+        let input = r#"
+            players = { p1 }
+            defenders = { d1 }
+            state = {
+                position = { p1 = (0, 60) },
+                defense = { d1 -> p1 },
+            }
+        "#;
+        let output = renderer.play(input).expect("Failed to play");
+        assert!(output.contains("players = { p1 }"));
+        assert!(output.contains("defenders = { d1 }"));
+        assert!(!output.contains("players = { p1, d1 }"));
+        assert!(output.contains("defense = {"));
+    }
+
+    #[test]
     fn test_error_reporting() {
         let renderer = Renderer::new();
         let input = "players = { "; // Missing closing brace
@@ -508,6 +608,7 @@ mod tests {
         let renderer = Renderer::new();
         let entity = Entity {
             id: "p1".to_string(),
+            kind: EntityKind::Player,
             label: "<tspan onload=\"x\">".to_string(),
             start_pos: (0.0, 0.0),
             end_pos: (0.0, 0.0),

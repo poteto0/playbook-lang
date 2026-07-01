@@ -170,3 +170,32 @@ action = {
 
 <svg width="500" height="500" viewBox="-105 -105 210 210" xmlns="http://www.w3.org/2000/svg"><rect x="-105" y="-105" width="210" height="210" fill="white" /><rect x="-100" y="-90" width="200" height="180" fill="white" stroke="black" stroke-width="2" /><rect x="-20" y="-90" width="40" height="65" fill="none" stroke="black" stroke-width="1" /><circle cx="0" cy="-25" r="20" fill="none" stroke="black" stroke-width="1" /><path d="M -80 -90 L -80 -35 A 80 80 0 0 0 80 -35 L 80 -90" fill="none" stroke="black" stroke-width="1" /><path d="M -20 90 A 20 20 0 0 1 20 90" fill="none" stroke="black" stroke-width="1" /><line x1="-12" y1="-88" x2="12" y2="-88" stroke="black" stroke-width="1" /><circle cx="0" cy="-84" r="5" stroke="red" stroke-width="1" fill="none" /><path d="M 0 60 L 0 54 Q 5 51.6 0 49.2 Q -5 46.8 0 44.4 Q 5 42 0 39.6 Q -5 37.2 0 34.8 Q 5 32.4 0 30 Q -5 27.599999999999994 0 25.200000000000003 Q 5 22.799999999999997 0 20.400000000000006 Q -5 18 0 15.599999999999994 Q 5 13.200000000000003 0 10.799999999999997 Q -5 8.400000000000006 0 6 L 0 0" stroke="black" stroke-width="2" fill="none" marker-end="url(#arrowhead)" /><circle cx="0" cy="60" r="10" fill="white" stroke="black" stroke-width="2" /><text x="0" y="60" font-size="12" text-anchor="middle" dominant-baseline="central" font-family="Arial">1</text><circle cx="0" cy="60" r="4" fill="orange" stroke="black" stroke-width="1" transform="translate(10, -10)" /><defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="black" /></marker></defs></svg>
 
+### Defense Action
+
+defense represents a [defender](./defenders.md)'s movement during the play, using the same `-> `/`-[N]>` mark syntax and `= (x, y)` fixed-coordinate syntax as [state's defense block](./state.md#defense). Defense move lines are drawn thin and green, with their own arrowhead, to stand out from player move/screen/pass lines.
+
+```playbook
+players = {p1}
+defenders = {d1}
+
+state = {
+  position = {
+    p1 = (0, 60),
+  },
+  defense = {
+    d1 -> p1,
+  },
+}
+
+action = {
+  move = {
+    p1 -> (0, 0),
+  },
+  defense = {
+    d1 -[15]> p1,
+  },
+}
+```
+
+<svg width="500" height="500" viewBox="-105 -105 210 210" xmlns="http://www.w3.org/2000/svg"><rect x="-105" y="-105" width="210" height="210" fill="white" /><rect x="-100" y="-90" width="200" height="180" fill="white" stroke="black" stroke-width="2" /><rect x="-20" y="-90" width="40" height="65" fill="none" stroke="black" stroke-width="1" /><circle cx="0" cy="-25" r="20" fill="none" stroke="black" stroke-width="1" /><path d="M -80 -90 L -80 -35 A 80 80 0 0 0 80 -35 L 80 -90" fill="none" stroke="black" stroke-width="1" /><path d="M -20 90 A 20 20 0 0 1 20 90" fill="none" stroke="black" stroke-width="1" /><line x1="-12" y1="-88" x2="12" y2="-88" stroke="black" stroke-width="1" /><circle cx="0" cy="-84" r="5" stroke="red" stroke-width="1" fill="none" /><line x1="0" y1="60" x2="0" y2="0" stroke="black" stroke-width="2" marker-end="url(#arrowhead)" /><line x1="0" y1="40" x2="0" y2="0" stroke="green" stroke-width="1" marker-end="url(#arrowhead-defense)" /><circle cx="0" cy="60" r="10" fill="white" stroke="black" stroke-width="2" /><text x="0" y="60" font-size="12" text-anchor="middle" dominant-baseline="central" font-family="Arial">1</text><text x="0" y="40" font-size="18" text-anchor="middle" dominant-baseline="central" font-family="Arial">x</text><defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="black" /></marker><marker id="arrowhead-defense" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="green" /></marker></defs></svg>
+
