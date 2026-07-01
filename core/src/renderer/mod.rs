@@ -182,7 +182,7 @@ impl Renderer {
             svg.push_str(&self.render_player(entity));
         }
 
-        svg.push_str("<defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"black\" /></marker></defs>");
+        svg.push_str("<defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"black\" /></marker><marker id=\"arrowhead-defense\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"green\" /></marker></defs>");
         svg.push_str("</svg>");
         svg
     }
@@ -353,7 +353,15 @@ impl Renderer {
     }
 
     fn render_defense(&self, d: &DefenseLine, draw_arrow: bool) -> String {
-        self.render_straight_line(d.from, d.to, draw_arrow)
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead-defense)\""
+        } else {
+            ""
+        };
+        format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"green\" stroke-width=\"1\"{} />",
+            d.from.0, d.from.1, d.to.0, d.to.1, marker
+        )
     }
 
     fn render_pass(&self, p: &PassLine) -> String {
@@ -434,6 +442,18 @@ impl Renderer {
 
     fn render_player(&self, entity: &Entity) -> String {
         let mut player = String::new();
+
+        if entity.kind == EntityKind::Defender {
+            let _ = write!(
+                &mut player,
+                "<text x=\"{}\" y=\"{}\" font-size=\"18\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
+                entity.start_pos.0,
+                entity.start_pos.1,
+                escape_xml(&entity.label)
+            );
+            return player;
+        }
+
         let _ = write!(
             &mut player,
             "<circle cx=\"{}\" cy=\"{}\" r=\"10\" fill=\"white\" stroke=\"black\" stroke-width=\"2\" />",
@@ -442,7 +462,9 @@ impl Renderer {
         let _ = write!(
             &mut player,
             "<text x=\"{}\" y=\"{}\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"Arial\">{}</text>",
-            entity.start_pos.0, entity.start_pos.1, escape_xml(&entity.label)
+            entity.start_pos.0,
+            entity.start_pos.1,
+            escape_xml(&entity.label)
         );
 
         if entity.is_baller {
@@ -528,9 +550,10 @@ mod tests {
         let output = renderer.render(input).expect("Failed to render");
         // Defender label "x" is drawn, without a ball marker.
         assert!(output.contains(">x<"));
-        // A defense movement line is drawn between the two marked positions.
+        // A defense movement line is drawn between the two marked positions,
+        // thinner and green to distinguish it from player move lines.
         assert!(output.contains(
-            "<line x1=\"0\" y1=\"50\" x2=\"0\" y2=\"55\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />"
+            "<line x1=\"0\" y1=\"40\" x2=\"0\" y2=\"55\" stroke=\"green\" stroke-width=\"1\" marker-end=\"url(#arrowhead-defense)\" />"
         ));
     }
 

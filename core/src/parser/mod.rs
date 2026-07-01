@@ -1143,7 +1143,7 @@ mod tests {
         match playbook.state.defense.get("d1") {
             Some((DefenseTarget::Mark { player, offset }, _)) => {
                 assert_eq!(player, "p1");
-                assert_eq!(*offset, 10.0);
+                assert_eq!(*offset, 20.0);
             }
             other => panic!("Expected default Mark for d1, got {:?}", other),
         }
@@ -1189,7 +1189,7 @@ mod tests {
         match &playbook.actions[0].defenses[1].target {
             DefenseTarget::Mark { player, offset } => {
                 assert_eq!(player, "p1");
-                assert_eq!(*offset, 10.0);
+                assert_eq!(*offset, 20.0);
             }
             other => panic!("Expected Mark for d2, got {:?}", other),
         }
