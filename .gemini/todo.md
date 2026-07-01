@@ -54,3 +54,13 @@
 - [x] Add `play` subcommand to `cli`
 - [x] Verify `play` command output with fixtures
 
+## Defensive Mode (#73)
+- [x] Lexer: add `defenders`/`defense` keywords and the `-[N]>` offset-mark arrow
+- [x] AST: add `Playbook.defenders`, `State.defense`, `DefenseTarget`, `Action.defenses`
+- [x] Parser: parse `defenders = { ... }` and shared `defense` blocks in `state`/`action`
+- [x] IR: resolve defender positions per phase (fixed position or mark-with-offset-toward-center)
+- [x] Renderer: draw defenders (label "x", no ball marker) and defense movement lines/arrows
+- [x] Formatter: canonical output for `defenders`/`state.defense`/`action.defense`
+- [x] Add `fixtures/defense.playbook` (+ generated `.svg`)
+- [x] `/simplify` pass: dedup parser/IR defense-resolution helpers, drop redundant clone, share a renderer straight-line helper
+
