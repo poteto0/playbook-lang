@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, PartialEq, Clone)]
 pub struct Playbook {
     pub players: Vec<String>,
+    pub defenders: Vec<String>,
     pub state: State,
     pub actions: Vec<Action>,
     pub comments: Vec<(Span, String)>,
@@ -13,6 +14,7 @@ pub struct Playbook {
 pub struct State {
     pub baller: Option<String>,
     pub positions: HashMap<String, (f64, f64)>,
+    pub defense: HashMap<String, DefenseTarget>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -20,6 +22,22 @@ pub struct Action {
     pub moves: Vec<MoveAction>,
     pub screens: Vec<ScreenAction>,
     pub passes: Vec<PassAction>,
+    pub defenses: Vec<DefenseAction>,
+}
+
+/// Where a defender is assigned to: a fixed court coordinate, or marking
+/// (tracking) a player, offset towards the center of the court by `offset`.
+#[derive(Debug, PartialEq, Clone)]
+pub enum DefenseTarget {
+    Position(f64, f64),
+    Mark { player: String, offset: f64 },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct DefenseAction {
+    pub defender: String,
+    pub target: DefenseTarget,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]

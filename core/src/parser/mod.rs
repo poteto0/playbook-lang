@@ -1,5 +1,7 @@
 use crate::ast::*;
-use crate::constants::{DEFAULT_BEZIER_CURVE_FACTOR, MAX_ACTIONS_PER_PHASE};
+use crate::constants::{
+    DEFAULT_BEZIER_CURVE_FACTOR, DEFAULT_DEFENSE_OFFSET, MAX_ACTIONS_PER_PHASE,
+};
 use crate::lexer::{Span, Token, TokenKind};
 use std::fmt;
 
@@ -224,6 +226,7 @@ impl Parser {
 
     pub fn parse(&mut self) -> (Playbook, Vec<ParseError>) {
         let mut players = Vec::new();
+        let mut defenders = Vec::new();
         let mut state = State::default();
         let mut actions = Vec::new();
 
@@ -234,7 +237,10 @@ impl Parser {
                     self.comments.push((token.span, s.clone()));
                 }
                 TokenKind::Players => {
-                    self.parse_players_section(&mut players);
+                    self.parse_identifier_list_section(&mut players);
+                }
+                TokenKind::Defenders => {
+                    self.parse_identifier_list_section(&mut defenders);
                 }
                 TokenKind::State => {
                     self.parse_state_section(&mut state);
@@ -254,7 +260,7 @@ impl Parser {
                 _ => {
                     let token = self.peek();
                     let mut msg = format!(
-                        "Expected section start (players, state, action, actions), but found '{}'",
+                        "Expected section start (players, defenders, state, action, actions), but found '{}'",
                         token.clone().kind
                     );
                     let TokenKind::Identifier(ref s) = token.kind else {
@@ -263,7 +269,7 @@ impl Parser {
                         continue;
                     };
                     if let Some(sugg) =
-                        get_suggestion(s, &["players", "state", "action", "actions"])
+                        get_suggestion(s, &["players", "defenders", "state", "action", "actions"])
                     {
                         msg = format!("Expected section start. Did you mean '{}'?", sugg);
                     }
@@ -276,6 +282,7 @@ impl Parser {
         (
             Playbook {
                 players,
+                defenders,
                 state,
                 actions,
                 comments: self.comments.clone(),
@@ -284,8 +291,9 @@ impl Parser {
         )
     }
 
-    fn parse_players_section(&mut self, players: &mut Vec<String>) {
-        self.advance(); // consume 'players'
+    /// Parses a `<keyword> = { id, id, ... }` section (used for `players` and `defenders`).
+    fn parse_identifier_list_section(&mut self, ids: &mut Vec<String>) {
+        self.advance(); // consume section keyword
         if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
             self.error(e);
             // Removed return to attempt recovery
@@ -296,7 +304,7 @@ impl Parser {
         }
         while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
             match self.expect_identifier() {
-                Ok(p) => players.push(p),
+                Ok(p) => ids.push(p),
                 Err(e) => {
                     self.error(e);
                     self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
@@ -430,16 +438,45 @@ impl Parser {
                     }
                     self.consume_if(TokenKind::Comma);
                 }
+                TokenKind::Defense => {
+                    self.advance();
+                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
+                        self.error(e);
+                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
+                        self.error(e);
+                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                    } else {
+                        while self.peek().kind != TokenKind::RBrace
+                            && self.peek().kind != TokenKind::EOF
+                        {
+                            match self.parse_defense_entry() {
+                                Ok((defender, target, _)) => {
+                                    state.defense.insert(defender, target);
+                                }
+                                Err(e) => {
+                                    self.error(e);
+                                    self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                                }
+                            }
+                            self.consume_if(TokenKind::Comma);
+                        }
+                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
+                            self.error(e);
+                        }
+                    }
+                    self.consume_if(TokenKind::Comma);
+                }
                 _ => {
                     let token = self.peek();
-                    let mut msg = "Expected state property (baller, position)".to_string();
+                    let mut msg = "Expected state property (baller, position, defense)".to_string();
                     let TokenKind::Identifier(ref s) = token.kind else {
                         self.error(ParseError::UnexpectedToken(token, msg));
                         self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
                         self.consume_if(TokenKind::Comma);
                         continue;
                     };
-                    if let Some(sugg) = get_suggestion(s, &["baller", "position"]) {
+                    if let Some(sugg) = get_suggestion(s, &["baller", "position", "defense"]) {
                         msg = format!("Expected state property. Did you mean '{}'?", sugg);
                     }
                     self.error(ParseError::UnexpectedToken(token, msg));
@@ -447,6 +484,71 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
             }
+        }
+    }
+
+    /// Consumes a defense mark arrow (`->` or `-[N]>`), returning the offset
+    /// distance to use (the default when a plain arrow is used).
+    fn expect_defense_mark_arrow(&mut self) -> Result<f64, ParseError> {
+        let token = self.peek();
+        match token.kind {
+            TokenKind::Arrow => {
+                self.advance();
+                Ok(DEFAULT_DEFENSE_OFFSET)
+            }
+            TokenKind::OffsetArrow(ref s) => {
+                self.advance();
+                let value = s.parse::<f64>().map_err(|_| {
+                    ParseError::InvalidSyntax(
+                        token.clone(),
+                        format!("Invalid defense offset: {}", s),
+                    )
+                })?;
+                if !value.is_finite() {
+                    return Err(ParseError::InvalidSyntax(
+                        token.clone(),
+                        format!("Defense offset must be a finite number: {}", s),
+                    ));
+                }
+                Ok(value)
+            }
+            TokenKind::Error(ref msg) => {
+                Err(ParseError::UnexpectedToken(token.clone(), msg.clone()))
+            }
+            unexpected => Err(ParseError::UnexpectedToken(
+                self.peek().clone(),
+                format!("Expected '->' or '-[N]>', but found '{}'", unexpected),
+            )),
+        }
+    }
+
+    /// Parses a single `defense` block entry, shared between `state.defense`
+    /// and `action.defense`: `d = (x, y)` sets a fixed position, while
+    /// `d -> p` / `d -[N]> p` marks (tracks) a player.
+    fn parse_defense_entry(&mut self) -> Result<(String, DefenseTarget, Span), ParseError> {
+        let span = self.peek_span();
+        let defender = self.expect_identifier()?;
+        match self.peek().kind {
+            TokenKind::Equals => {
+                self.advance();
+                let (x, y) = self.parse_coordinate()?;
+                Ok((defender, DefenseTarget::Position(x, y), span))
+            }
+            TokenKind::Arrow | TokenKind::OffsetArrow(_) => {
+                let offset = self.expect_defense_mark_arrow()?;
+                if self.peek().kind == TokenKind::LParenthesis {
+                    let (x, y) = self.parse_coordinate()?;
+                    Ok((defender, DefenseTarget::Position(x, y), span))
+                } else {
+                    let player = self.expect_identifier()?;
+                    Ok((defender, DefenseTarget::Mark { player, offset }, span))
+                }
+            }
+            TokenKind::Error(ref msg) => Err(ParseError::UnexpectedToken(self.peek(), msg.clone())),
+            unexpected => Err(ParseError::UnexpectedToken(
+                self.peek(),
+                format!("Expected '=', '->' or '-[N]>', but found '{}'", unexpected),
+            )),
         }
     }
 
@@ -677,16 +779,45 @@ impl Parser {
                     }
                     self.consume_if(TokenKind::Comma);
                 }
+                TokenKind::Defense => {
+                    self.advance();
+                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
+                        self.error(e);
+                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
+                        self.error(e);
+                    } else {
+                        while self.peek().kind != TokenKind::RBrace
+                            && self.peek().kind != TokenKind::EOF
+                        {
+                            match self.parse_defense_entry() {
+                                Ok((defender, target, span)) => {
+                                    action.defenses.push(DefenseAction {
+                                        defender,
+                                        target,
+                                        span,
+                                    });
+                                }
+                                Err(e) => self.error(e),
+                            }
+                            self.consume_if(TokenKind::Comma);
+                        }
+                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
+                            self.error(e);
+                        }
+                    }
+                    self.consume_if(TokenKind::Comma);
+                }
                 _ => {
                     let token = self.peek();
-                    let mut msg = "Expected action property (move, screen, pass)".to_string();
+                    let mut msg =
+                        "Expected action property (move, screen, pass, defense)".to_string();
                     let TokenKind::Identifier(ref s) = token.kind else {
                         self.error(ParseError::UnexpectedToken(token, msg));
                         self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
                         self.consume_if(TokenKind::Comma);
                         continue;
                     };
-                    if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass"]) {
+                    if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass", "defense"]) {
                         msg = format!("Expected action property. Did you mean '{}'?", sugg);
                     }
                     self.error(ParseError::UnexpectedToken(token, msg));
@@ -954,5 +1085,112 @@ mod tests {
         let span = playbook.actions[0].moves[0].span;
         assert_eq!(span.line, 4);
         assert_eq!(span.column, 1);
+    }
+
+    #[test]
+    fn test_parse_defenders_section() {
+        let input = "defenders = { d1, d2 }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty());
+        assert_eq!(playbook.defenders, vec!["d1", "d2"]);
+    }
+
+    #[test]
+    fn test_parse_state_defense_position_and_mark() {
+        let input = r#"
+        players = { p1 }
+        defenders = { d1, d2, d3 }
+        state = {
+            position = { p1 = (0, 0) },
+            defense = {
+                d1 -> p1,
+                d2 = (-90, -80),
+                d3 -[7]> p1,
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+        match playbook.state.defense.get("d1") {
+            Some(DefenseTarget::Mark { player, offset }) => {
+                assert_eq!(player, "p1");
+                assert_eq!(*offset, 10.0);
+            }
+            other => panic!("Expected default Mark for d1, got {:?}", other),
+        }
+        match playbook.state.defense.get("d2") {
+            Some(DefenseTarget::Position(x, y)) => assert_eq!((*x, *y), (-90.0, -80.0)),
+            other => panic!("Expected Position for d2, got {:?}", other),
+        }
+        match playbook.state.defense.get("d3") {
+            Some(DefenseTarget::Mark { player, offset }) => {
+                assert_eq!(player, "p1");
+                assert_eq!(*offset, 7.0);
+            }
+            other => panic!("Expected Mark with offset 7 for d3, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_action_defense_move_and_mark() {
+        let input = r#"
+        players = { p1 }
+        defenders = { d1, d2 }
+        state = { position = { p1 = (0, 0) } }
+        action = {
+            defense = {
+                d1 -> (70, 20),
+                d2 -> p1,
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+        assert_eq!(playbook.actions[0].defenses.len(), 2);
+        assert_eq!(playbook.actions[0].defenses[0].defender, "d1");
+        match &playbook.actions[0].defenses[0].target {
+            DefenseTarget::Position(x, y) => assert_eq!((*x, *y), (70.0, 20.0)),
+            other => panic!("Expected Position for d1, got {:?}", other),
+        }
+        assert_eq!(playbook.actions[0].defenses[1].defender, "d2");
+        match &playbook.actions[0].defenses[1].target {
+            DefenseTarget::Mark { player, offset } => {
+                assert_eq!(player, "p1");
+                assert_eq!(*offset, 10.0);
+            }
+            other => panic!("Expected Mark for d2, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_defense_offset() {
+        let input = r#"
+        players = { p1 }
+        defenders = { d1 }
+        state = {
+            defense = { d1 -[abc]> p1 },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (_, errors) = parser.parse();
+
+        let found = errors.iter().any(|e| match e {
+            ParseError::InvalidSyntax(_, msg) => msg.contains("Invalid defense offset"),
+            _ => false,
+        });
+        assert!(found, "expected InvalidSyntax error, got {:?}", errors);
     }
 }

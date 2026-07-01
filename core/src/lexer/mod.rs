@@ -26,9 +26,11 @@ pub struct Token {
 pub enum TokenKind {
     // Keywords
     Players,
+    Defenders,
     State,
     Baller,
     Position,
+    Defense,
     Action,
     Actions,
     Move,
@@ -43,17 +45,18 @@ pub enum TokenKind {
     Number(f64), // Coordinates can be numbers
 
     // Symbols
-    Equals,             // =
-    LBrace,             // {
-    RBrace,             // }
-    LBracket,           // [
-    RBracket,           // ]
-    LParenthesis,       // (
-    RParenthesis,       // )
-    Comma,              // ,
-    Arrow,              // ->
-    CurveArrow(String), // ~> (default: l), ~[l]>, ~[r]>
-    Colon,              // :
+    Equals,              // =
+    LBrace,              // {
+    RBrace,              // }
+    LBracket,            // [
+    RBracket,            // ]
+    LParenthesis,        // (
+    RParenthesis,        // )
+    Comma,               // ,
+    Arrow,               // ->
+    CurveArrow(String),  // ~> (default: l), ~[l]>, ~[r]>
+    OffsetArrow(String), // -[N]> (defense mark with explicit offset distance)
+    Colon,               // :
 
     // Special
     Comment(String),
@@ -66,9 +69,11 @@ impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             TokenKind::Players => write!(f, "players"),
+            TokenKind::Defenders => write!(f, "defenders"),
             TokenKind::State => write!(f, "state"),
             TokenKind::Baller => write!(f, "baller"),
             TokenKind::Position => write!(f, "position"),
+            TokenKind::Defense => write!(f, "defense"),
             TokenKind::Action => write!(f, "action"),
             TokenKind::Actions => write!(f, "actions"),
             TokenKind::Move => write!(f, "move"),
@@ -89,6 +94,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Comma => write!(f, ","),
             TokenKind::Arrow => write!(f, "->"),
             TokenKind::CurveArrow(_) => write!(f, "~>"),
+            TokenKind::OffsetArrow(_) => write!(f, "-[N]>"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Comment(s) => write!(f, "// {}", s),
             TokenKind::EOF => write!(f, "EOF"),
@@ -265,6 +271,24 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
                     TokenKind::Arrow
+                } else if self.starts_with("-[") {
+                    self.advance(); // -
+                    self.advance(); // [
+                    match self.read_inside_brackets() {
+                        Ok(content) => {
+                            if self.starts_with("]>") {
+                                self.advance(); // ]
+                                self.advance(); // >
+                                TokenKind::OffsetArrow(content)
+                            } else {
+                                TokenKind::Error(format!(
+                                    "Expected ]> after offset parameters, but found '{}",
+                                    content
+                                ))
+                            }
+                        }
+                        Err(msg) => TokenKind::Error(msg),
+                    }
                 } else if self.input[self.pos + 1..]
                     .chars()
                     .next()
@@ -318,9 +342,11 @@ impl<'a> Lexer<'a> {
                 let ident = self.read_identifier();
                 match ident.as_str() {
                     "players" => TokenKind::Players,
+                    "defenders" => TokenKind::Defenders,
                     "state" => TokenKind::State,
                     "baller" => TokenKind::Baller,
                     "position" => TokenKind::Position,
+                    "defense" => TokenKind::Defense,
                     "action" => TokenKind::Action,
                     "actions" => TokenKind::Actions,
                     "move" => TokenKind::Move,
@@ -484,6 +510,41 @@ mod tests {
                 TokenKind::Error(msg) => assert!(msg.contains("Unexpected character")),
                 other => panic!("Expected Error token for '{}', got {:?}", input, other),
             }
+        }
+    }
+
+    #[test]
+    fn test_defense_keywords() {
+        let input = "defenders defense";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![TokenKind::Defenders, TokenKind::Defense, TokenKind::EOF]
+        );
+    }
+
+    #[test]
+    fn test_offset_arrow() {
+        let input = "-[7]>";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![TokenKind::OffsetArrow("7".to_string()), TokenKind::EOF]
+        );
+    }
+
+    #[test]
+    fn test_offset_arrow_unclosed_is_error() {
+        let input = "-[7";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        match &tokens[0].kind {
+            TokenKind::Error(msg) => assert!(msg.contains("Unclosed bracket")),
+            other => panic!("Expected Error token, got {:?}", other),
         }
     }
 

@@ -95,9 +95,28 @@ impl Renderer {
             Ok(scene) => {
                 let mut output = String::new();
 
+                let players: Vec<&Entity> = scene
+                    .entities
+                    .iter()
+                    .filter(|e| e.kind == EntityKind::Player)
+                    .collect();
+                let defenders: Vec<&Entity> = scene
+                    .entities
+                    .iter()
+                    .filter(|e| e.kind == EntityKind::Defender)
+                    .collect();
+
                 // players
-                let player_ids: Vec<String> = scene.entities.iter().map(|e| e.id.clone()).collect();
+                let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
                 output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
+
+                if !defenders.is_empty() {
+                    let defender_ids: Vec<&str> = defenders.iter().map(|e| e.id.as_str()).collect();
+                    output.push_str(&format!(
+                        "defenders = {{ {} }}\n\n",
+                        defender_ids.join(", ")
+                    ));
+                }
 
                 // state
                 output.push_str("state = {\n");
@@ -106,13 +125,24 @@ impl Renderer {
                 }
 
                 output.push_str("  position = {\n");
-                for entity in &scene.entities {
+                for entity in &players {
                     output.push_str(&format!(
                         "    {} = ({}, {}),\n",
                         entity.id, entity.end_pos.0, entity.end_pos.1
                     ));
                 }
                 output.push_str("  },\n");
+
+                if !defenders.is_empty() {
+                    output.push_str("  defense = {\n");
+                    for entity in &defenders {
+                        output.push_str(&format!(
+                            "    {} = ({}, {}),\n",
+                            entity.id, entity.end_pos.0, entity.end_pos.1
+                        ));
+                    }
+                    output.push_str("  },\n");
+                }
                 output.push_str("}\n");
 
                 Ok(output)
@@ -144,6 +174,10 @@ impl Renderer {
                 }
                 Interaction::Screen(s) => {
                     svg.push_str(&self.render_screen(s));
+                }
+                Interaction::Defense(d) => {
+                    let is_last = self.is_last_move(scene, i, &d.defender_id);
+                    svg.push_str(&self.render_defense(d, is_last));
                 }
             }
         }
@@ -318,6 +352,18 @@ impl Renderer {
         (mid_x + nx * factor, mid_y + ny * factor)
     }
 
+    fn render_defense(&self, d: &DefenseLine, draw_arrow: bool) -> String {
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead)\""
+        } else {
+            ""
+        };
+        format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
+            d.from.0, d.from.1, d.to.0, d.to.1, marker
+        )
+    }
+
     fn render_pass(&self, p: &PassLine) -> String {
         format!(
             "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\" stroke-dasharray=\"4\" marker-end=\"url(#arrowhead)\" />",
@@ -390,6 +436,7 @@ impl Renderer {
             match &scene.interactions[i] {
                 Interaction::Move(m) if m.player_id == player_id => return false,
                 Interaction::Screen(s) if s.screener_id == player_id => return false,
+                Interaction::Defense(d) if d.defender_id == player_id => return false,
                 _ => {}
             }
         }
@@ -476,6 +523,47 @@ mod tests {
     }
 
     #[test]
+    fn test_render_defender() {
+        let renderer = Renderer::new();
+        let input = r#"
+            players = { p1 }
+            defenders = { d1 }
+            state = {
+                position = { p1 = (0, 60) },
+                defense = { d1 -> p1 },
+            }
+            action = {
+                defense = { d1 -[5]> p1 },
+            }
+        "#;
+        let output = renderer.render(input).expect("Failed to render");
+        // Defender label "x" is drawn, without a ball marker.
+        assert!(output.contains(">x<"));
+        // A defense movement line is drawn between the two marked positions.
+        assert!(output.contains(
+            "<line x1=\"0\" y1=\"50\" x2=\"0\" y2=\"55\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />"
+        ));
+    }
+
+    #[test]
+    fn test_play_reports_defenders_separately_from_players() {
+        let renderer = Renderer::new();
+        let input = r#"
+            players = { p1 }
+            defenders = { d1 }
+            state = {
+                position = { p1 = (0, 60) },
+                defense = { d1 -> p1 },
+            }
+        "#;
+        let output = renderer.play(input).expect("Failed to play");
+        assert!(output.contains("players = { p1 }"));
+        assert!(output.contains("defenders = { d1 }"));
+        assert!(!output.contains("players = { p1, d1 }"));
+        assert!(output.contains("defense = {"));
+    }
+
+    #[test]
     fn test_error_reporting() {
         let renderer = Renderer::new();
         let input = "players = { "; // Missing closing brace
@@ -508,6 +596,7 @@ mod tests {
         let renderer = Renderer::new();
         let entity = Entity {
             id: "p1".to_string(),
+            kind: EntityKind::Player,
             label: "<tspan onload=\"x\">".to_string(),
             start_pos: (0.0, 0.0),
             end_pos: (0.0, 0.0),

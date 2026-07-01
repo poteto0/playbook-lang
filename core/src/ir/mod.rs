@@ -40,9 +40,16 @@ pub struct Scene {
     pub final_baller: Option<String>,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+pub enum EntityKind {
+    Player,
+    Defender,
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct Entity {
     pub id: String,
+    pub kind: EntityKind,
     pub label: String,
     pub start_pos: (f64, f64),
     pub end_pos: (f64, f64),
@@ -54,6 +61,7 @@ pub enum Interaction {
     Move(MoveLine),
     Pass(PassLine),
     Screen(ScreenLine),
+    Defense(DefenseLine),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -67,6 +75,13 @@ pub struct MoveLine {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PassLine {
+    pub from: (f64, f64),
+    pub to: (f64, f64),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct DefenseLine {
+    pub defender_id: String,
     pub from: (f64, f64),
     pub to: (f64, f64),
 }
