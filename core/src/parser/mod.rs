@@ -279,6 +279,24 @@ impl Parser {
             }
         }
 
+        let mut colliding_ids: Vec<&String> =
+            players.iter().filter(|p| defenders.contains(p)).collect();
+        if !colliding_ids.is_empty() {
+            colliding_ids.sort();
+            let ids = colliding_ids
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.error(ParseError::InvalidSyntax(
+                self.peek(),
+                format!(
+                    "Identifier(s) used in both 'players' and 'defenders': {}",
+                    ids
+                ),
+            ));
+        }
+
         (
             Playbook {
                 players,
@@ -439,8 +457,8 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
-                    for (defender, target, _) in self.parse_defense_block() {
-                        state.defense.insert(defender, target);
+                    for (defender, target, span) in self.parse_defense_block() {
+                        state.defense.insert(defender, (target, span));
                     }
                     self.consume_if(TokenKind::Comma);
                 }
@@ -512,9 +530,23 @@ impl Parser {
                 Ok((defender, DefenseTarget::Position(x, y), span))
             }
             TokenKind::Arrow | TokenKind::OffsetArrow(_) => {
+                let is_explicit_offset = matches!(self.peek().kind, TokenKind::OffsetArrow(_));
+                let arrow_token = self.peek();
                 let offset = self.expect_defense_mark_arrow()?;
                 if self.peek().kind == TokenKind::LParenthesis {
+                    // Consume the coordinate even when rejecting, so a bad
+                    // explicit offset doesn't leave dangling tokens for the
+                    // caller's error recovery to stumble over.
                     let (x, y) = self.parse_coordinate()?;
+                    if is_explicit_offset {
+                        return Err(ParseError::InvalidSyntax(
+                            arrow_token,
+                            format!(
+                                "Explicit offset '-[{}]>' has no effect before a fixed position; use '->' instead",
+                                offset
+                            ),
+                        ));
+                    }
                     Ok((defender, DefenseTarget::Position(x, y), span))
                 } else {
                     let player = self.expect_identifier()?;
@@ -1109,18 +1141,18 @@ mod tests {
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
 
         match playbook.state.defense.get("d1") {
-            Some(DefenseTarget::Mark { player, offset }) => {
+            Some((DefenseTarget::Mark { player, offset }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 10.0);
             }
             other => panic!("Expected default Mark for d1, got {:?}", other),
         }
         match playbook.state.defense.get("d2") {
-            Some(DefenseTarget::Position(x, y)) => assert_eq!((*x, *y), (-90.0, -80.0)),
+            Some((DefenseTarget::Position(x, y), _)) => assert_eq!((*x, *y), (-90.0, -80.0)),
             other => panic!("Expected Position for d2, got {:?}", other),
         }
         match playbook.state.defense.get("d3") {
-            Some(DefenseTarget::Mark { player, offset }) => {
+            Some((DefenseTarget::Mark { player, offset }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 7.0);
             }
@@ -1179,6 +1211,43 @@ mod tests {
 
         let found = errors.iter().any(|e| match e {
             ParseError::InvalidSyntax(_, msg) => msg.contains("Invalid defense offset"),
+            _ => false,
+        });
+        assert!(found, "expected InvalidSyntax error, got {:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_explicit_offset_before_coordinate_is_rejected() {
+        let input = r#"
+        defenders = { d1 }
+        state = {
+            defense = { d1 -[15]> (70, 20) },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (_, errors) = parser.parse();
+
+        let found = errors.iter().any(|e| match e {
+            ParseError::InvalidSyntax(_, msg) => msg.contains("has no effect"),
+            _ => false,
+        });
+        assert!(found, "expected InvalidSyntax error, got {:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_players_and_defenders_ids_must_be_disjoint() {
+        let input = "players = { p1 }\ndefenders = { p1 }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (_, errors) = parser.parse();
+
+        let found = errors.iter().any(|e| match e {
+            ParseError::InvalidSyntax(_, msg) => {
+                msg.contains("both 'players' and 'defenders'") && msg.contains("p1")
+            }
             _ => false,
         });
         assert!(found, "expected InvalidSyntax error, got {:?}", errors);

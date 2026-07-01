@@ -108,6 +108,10 @@ impl Formatter {
             return;
         }
 
+        if let Some((span, _)) = self.comments.front() {
+            self.flush_comments(span.start + 1);
+        }
+
         self.push_str("defenders = { ");
         self.push_str(&defenders.join(", "));
         self.push_str(" }\n\n");
@@ -160,7 +164,7 @@ impl Formatter {
             let mut sorted_defenders: Vec<_> = state.defense.keys().collect();
             sorted_defenders.sort();
             for defender in sorted_defenders {
-                let target = state.defense.get(defender).unwrap();
+                let (target, _) = state.defense.get(defender).unwrap();
                 self.push_str(&self.indent());
                 self.push_str(defender);
                 self.push_str(" ");
@@ -453,6 +457,25 @@ action = {
     d2 -> (70, 20),
   },
 }
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_defenders_flushes_leading_comment() {
+        // With no `players` section, `format_defenders` must flush a
+        // top-of-file comment itself, the same way `format_players` does,
+        // instead of leaving it queued until the end of the output.
+        let input = "// setup notes\ndefenders = { d1 }\nstate = { defense = { d1 = (0, 0) } }";
+        let expected = r#"// setup notes
+defenders = { d1 }
+
+state = {
+  defense = {
+    d1 = (0, 0),
+  },
+}
+
 "#;
         assert_eq!(format(input), expected);
     }

@@ -193,14 +193,14 @@ impl<'a> Lexer<'a> {
         self.input[start..self.pos].trim().to_string()
     }
 
-    fn read_inside_brackets(&mut self) -> Result<String, String> {
+    fn read_inside_brackets(&mut self, context: &str) -> Result<String, String> {
         let start = self.pos;
         while let Some(c) = self.peek() {
             if c == ']' {
                 return Ok(self.input[start..self.pos].to_string());
             }
             if c == '\n' {
-                return Err("Unexpected newline in curve parameters".to_string());
+                return Err(format!("Unexpected newline in {}", context));
             }
             self.advance();
         }
@@ -274,7 +274,7 @@ impl<'a> Lexer<'a> {
                 } else if self.starts_with("-[") {
                     self.advance(); // -
                     self.advance(); // [
-                    match self.read_inside_brackets() {
+                    match self.read_inside_brackets("offset parameters") {
                         Ok(content) => {
                             if self.starts_with("]>") {
                                 self.advance(); // ]
@@ -309,7 +309,7 @@ impl<'a> Lexer<'a> {
                 } else if self.starts_with("~[") {
                     self.advance(); // ~
                     self.advance(); // [
-                    match self.read_inside_brackets() {
+                    match self.read_inside_brackets("curve parameters") {
                         Ok(content) => {
                             if self.starts_with("]>") {
                                 self.advance(); // ]

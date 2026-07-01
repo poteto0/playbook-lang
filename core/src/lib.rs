@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 pub mod ast;
 pub mod constants;
+mod geometry;
 pub mod ir;
 pub mod lexer;
 pub mod parser;

@@ -14,7 +14,7 @@ pub struct Playbook {
 pub struct State {
     pub baller: Option<String>,
     pub positions: HashMap<String, (f64, f64)>,
-    pub defense: HashMap<String, DefenseTarget>,
+    pub defense: HashMap<String, (DefenseTarget, Span)>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]

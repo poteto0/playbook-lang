@@ -1,3 +1,4 @@
+use crate::geometry::normalize;
 use crate::ir::*;
 use crate::parser::ParseError;
 use std::fmt::Write;
@@ -267,15 +268,10 @@ impl Renderer {
     fn render_dribble(&self, m: &MoveLine, draw_arrow: bool) -> String {
         let dx = m.to.0 - m.from.0;
         let dy = m.to.1 - m.from.1;
-        let dist = (dx * dx + dy * dy).sqrt();
 
-        if dist < 1.0 {
+        let Some((ux, uy, dist)) = normalize(dx, dy, 1.0) else {
             return "".to_string(); // Too short
-        }
-
-        // Normalize direction
-        let ux = dx / dist;
-        let uy = dy / dist;
+        };
 
         // Perpendicular vector
         let px = -uy;
@@ -370,14 +366,11 @@ impl Renderer {
     fn render_screen(&self, s: &ScreenLine) -> String {
         let dx = s.to.0 - s.from.0;
         let dy = s.to.1 - s.from.1;
-        let len = (dx * dx + dy * dy).sqrt();
 
         // Normalized direction. Default to (0, 1) (downward) if stationary.
-        let (nx, ny) = if len > 0.001 {
-            (dx / len, dy / len)
-        } else {
-            (0.0, 1.0)
-        };
+        let (nx, ny) = normalize(dx, dy, 0.001)
+            .map(|(ux, uy, _)| (ux, uy))
+            .unwrap_or((0.0, 1.0));
 
         // Offset the screen position slightly towards the screener (from)
         let shift_amount = 5.0;

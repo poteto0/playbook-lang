@@ -1,4 +1,5 @@
 use crate::ast::{DefenseTarget, PathType, Playbook, ScreenTarget, Timing};
+use crate::geometry::normalize;
 use crate::ir::*;
 use crate::lexer::Span;
 use std::collections::HashMap;
@@ -7,14 +8,16 @@ pub struct IRGenerator;
 
 /// Offsets `pos` towards the center of the court (the origin) by `distance`.
 /// If `pos` is already (effectively) at the center, no direction exists to
-/// offset towards, so the position is returned unchanged.
+/// offset towards, so the position is returned unchanged. `distance` is
+/// clamped to `pos`'s distance from center so the offset can never overshoot
+/// past the center to the far side of the tracked position.
 fn offset_towards_center(pos: (f64, f64), distance: f64) -> (f64, f64) {
     let (x, y) = pos;
-    let len = (x * x + y * y).sqrt();
-    if len < 1e-9 {
+    let Some((ux, uy, len)) = normalize(x, y, 1e-9) else {
         return pos;
-    }
-    (x - x / len * distance, y - y / len * distance)
+    };
+    let distance = distance.min(len);
+    (x - ux * distance, y - uy * distance)
 }
 
 /// Resolves what a defender's target position is, given the current
@@ -34,17 +37,19 @@ fn resolve_defense_target<'a>(
 }
 
 /// Resolves the initial (state) position of every defender listed in
-/// `defense`. Defenders marking a player not present in `positions` fall
-/// back to the origin, matching the lenient fallback used for players.
+/// `defense`. A Mark referencing a player not present in `positions` fails
+/// with `IRError::UnexpectedPlayer`, matching the strict behavior of
+/// `action.defense` marks.
 fn resolve_initial_defense_positions(
-    defense: &HashMap<String, DefenseTarget>,
+    defense: &HashMap<String, (DefenseTarget, Span)>,
     positions: &HashMap<String, (f64, f64)>,
-) -> HashMap<String, (f64, f64)> {
+) -> Result<HashMap<String, (f64, f64)>, IRError> {
     defense
         .iter()
-        .map(|(defender, target)| {
-            let pos = resolve_defense_target(target, positions).unwrap_or((0.0, 0.0));
-            (defender.clone(), pos)
+        .map(|(defender, (target, span))| {
+            let pos = resolve_defense_target(target, positions)
+                .map_err(|player| IRError::UnexpectedPlayer(*span, player.to_string()))?;
+            Ok((defender.clone(), pos))
         })
         .collect()
 }
@@ -94,7 +99,7 @@ impl IRGenerator {
         let mut current_baller = playbook.state.baller.clone();
 
         let initial_defense_positions =
-            resolve_initial_defense_positions(&playbook.state.defense, &initial_positions);
+            resolve_initial_defense_positions(&playbook.state.defense, &initial_positions)?;
         let mut current_defense_positions = initial_defense_positions.clone();
 
         for action in playbook.actions {
@@ -456,12 +461,18 @@ mod tests {
         let mut defense = HashMap::new();
         defense.insert(
             "d1".to_string(),
-            DefenseTarget::Mark {
-                player: "p1".to_string(),
-                offset: 10.0,
-            },
+            (
+                DefenseTarget::Mark {
+                    player: "p1".to_string(),
+                    offset: 10.0,
+                },
+                dummy_span(),
+            ),
         );
-        defense.insert("d2".to_string(), DefenseTarget::Position(-90.0, -80.0));
+        defense.insert(
+            "d2".to_string(),
+            (DefenseTarget::Position(-90.0, -80.0), dummy_span()),
+        );
 
         let playbook = Playbook {
             players: vec!["p1".to_string()],
@@ -570,5 +581,77 @@ mod tests {
             IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "p99"),
             other => panic!("Expected UnexpectedPlayer, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_state_defense_mark_unknown_player_errors() {
+        let mut defense = HashMap::new();
+        defense.insert(
+            "d1".to_string(),
+            (
+                DefenseTarget::Mark {
+                    player: "p99".to_string(),
+                    offset: 10.0,
+                },
+                dummy_span(),
+            ),
+        );
+
+        let playbook = Playbook {
+            players: vec![],
+            defenders: vec!["d1".to_string()],
+            state: State {
+                defense,
+                ..Default::default()
+            },
+            actions: vec![],
+            comments: vec![],
+        };
+
+        // A state.defense Mark referencing an unknown player must error the
+        // same way an action.defense Mark does, instead of silently
+        // defaulting the defender to the court origin.
+        let result = IRGenerator::generate(playbook);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "p99"),
+            other => panic!("Expected UnexpectedPlayer, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_defense_mark_offset_clamped_to_not_overshoot_center() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 5.0));
+
+        let mut defense = HashMap::new();
+        defense.insert(
+            "d1".to_string(),
+            (
+                DefenseTarget::Mark {
+                    player: "p1".to_string(),
+                    offset: 10.0,
+                },
+                dummy_span(),
+            ),
+        );
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            defenders: vec!["d1".to_string()],
+            state: State {
+                positions,
+                defense,
+                ..Default::default()
+            },
+            actions: vec![],
+            comments: vec![],
+        };
+
+        let scene = IRGenerator::generate(playbook).unwrap();
+        let d1 = scene.entities.iter().find(|e| e.id == "d1").unwrap();
+        // p1 is only 5 units from center; an offset of 10 must clamp to 5
+        // rather than overshoot to the far side of center at (0, -5).
+        assert_eq!(d1.start_pos, (0.0, 0.0));
     }
 }
