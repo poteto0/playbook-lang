@@ -17,6 +17,22 @@ fn offset_towards_center(pos: (f64, f64), distance: f64) -> (f64, f64) {
     (x - x / len * distance, y - y / len * distance)
 }
 
+/// Resolves what a defender's target position is, given the current
+/// player positions. A fixed `Position` always resolves; a `Mark` fails
+/// with the marked player's id if that player can't be found.
+fn resolve_defense_target<'a>(
+    target: &'a DefenseTarget,
+    positions: &HashMap<String, (f64, f64)>,
+) -> Result<(f64, f64), &'a str> {
+    match target {
+        DefenseTarget::Position(x, y) => Ok((*x, *y)),
+        DefenseTarget::Mark { player, offset } => positions
+            .get(player)
+            .map(|p| offset_towards_center(*p, *offset))
+            .ok_or(player),
+    }
+}
+
 /// Resolves the initial (state) position of every defender listed in
 /// `defense`. Defenders marking a player not present in `positions` fall
 /// back to the origin, matching the lenient fallback used for players.
@@ -27,13 +43,7 @@ fn resolve_initial_defense_positions(
     defense
         .iter()
         .map(|(defender, target)| {
-            let pos = match target {
-                DefenseTarget::Position(x, y) => (*x, *y),
-                DefenseTarget::Mark { player, offset } => positions
-                    .get(player)
-                    .map(|p| offset_towards_center(*p, *offset))
-                    .unwrap_or((0.0, 0.0)),
-            };
+            let pos = resolve_defense_target(target, positions).unwrap_or((0.0, 0.0));
             (defender.clone(), pos)
         })
         .collect()
@@ -183,34 +193,26 @@ impl IRGenerator {
             }
 
             // Defenders: move to a fixed position, or mark (track) a player,
-            // offset towards the center of the court.
-            let phase_start_defense_positions = current_defense_positions.clone();
-            let mut phase_end_defense_positions = phase_start_defense_positions.clone();
-            let mut defense_lines = Vec::new();
+            // offset towards the center of the court. `current_defense_positions`
+            // is only read here (it's reassigned once, below), so `from` can be
+            // read directly from it without a separate frozen snapshot.
+            let mut phase_end_defense_positions = current_defense_positions.clone();
             for defense_action in action.defenses {
-                let from = *phase_start_defense_positions
+                let from = *current_defense_positions
                     .get(&defense_action.defender)
                     .unwrap_or(&(0.0, 0.0));
 
-                let to = match defense_action.target {
-                    DefenseTarget::Position(x, y) => (x, y),
-                    DefenseTarget::Mark { player, offset } => {
-                        let player_pos = *phase_end_positions.get(&player).ok_or_else(|| {
-                            IRError::UnexpectedPlayer(defense_action.span, player.clone())
-                        })?;
-                        offset_towards_center(player_pos, offset)
-                    }
-                };
+                let to = resolve_defense_target(&defense_action.target, &phase_end_positions)
+                    .map_err(|player| {
+                        IRError::UnexpectedPlayer(defense_action.span, player.to_string())
+                    })?;
 
                 phase_end_defense_positions.insert(defense_action.defender.clone(), to);
-                defense_lines.push(DefenseLine {
+                interactions.push(Interaction::Defense(DefenseLine {
                     defender_id: defense_action.defender,
                     from,
                     to,
-                });
-            }
-            for line in defense_lines {
-                interactions.push(Interaction::Defense(line));
+                }));
             }
 
             // Update current positions for the next phase

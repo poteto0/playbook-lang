@@ -95,16 +95,10 @@ impl Renderer {
             Ok(scene) => {
                 let mut output = String::new();
 
-                let players: Vec<&Entity> = scene
+                let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
                     .entities
                     .iter()
-                    .filter(|e| e.kind == EntityKind::Player)
-                    .collect();
-                let defenders: Vec<&Entity> = scene
-                    .entities
-                    .iter()
-                    .filter(|e| e.kind == EntityKind::Defender)
-                    .collect();
+                    .partition(|e| e.kind == EntityKind::Player);
 
                 // players
                 let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
@@ -251,13 +245,23 @@ impl Renderer {
                     m.from.0, m.from.1, cx, cy, m.to.0, m.to.1, marker
                 )
             }
-            None => {
-                format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
-                    m.from.0, m.from.1, m.to.0, m.to.1, marker
-                )
-            }
+            None => self.render_straight_line(m.from, m.to, draw_arrow),
         }
+    }
+
+    /// A plain straight `<line>` between two points, with an optional
+    /// arrowhead marker at the end. Shared by straight moves and defense
+    /// movement lines.
+    fn render_straight_line(&self, from: (f64, f64), to: (f64, f64), draw_arrow: bool) -> String {
+        let marker = if draw_arrow {
+            " marker-end=\"url(#arrowhead)\""
+        } else {
+            ""
+        };
+        format!(
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
+            from.0, from.1, to.0, to.1, marker
+        )
     }
 
     fn render_dribble(&self, m: &MoveLine, draw_arrow: bool) -> String {
@@ -353,15 +357,7 @@ impl Renderer {
     }
 
     fn render_defense(&self, d: &DefenseLine, draw_arrow: bool) -> String {
-        let marker = if draw_arrow {
-            " marker-end=\"url(#arrowhead)\""
-        } else {
-            ""
-        };
-        format!(
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"2\"{} />",
-            d.from.0, d.from.1, d.to.0, d.to.1, marker
-        )
+        self.render_straight_line(d.from, d.to, draw_arrow)
     }
 
     fn render_pass(&self, p: &PassLine) -> String {

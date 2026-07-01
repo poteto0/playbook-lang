@@ -439,31 +439,8 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
-                            match self.parse_defense_entry() {
-                                Ok((defender, target, _)) => {
-                                    state.defense.insert(defender, target);
-                                }
-                                Err(e) => {
-                                    self.error(e);
-                                    self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                                }
-                            }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
+                    for (defender, target, _) in self.parse_defense_block() {
+                        state.defense.insert(defender, target);
                     }
                     self.consume_if(TokenKind::Comma);
                 }
@@ -550,6 +527,37 @@ impl Parser {
                 format!("Expected '=', '->' or '-[N]>', but found '{}'", unexpected),
             )),
         }
+    }
+
+    /// Parses a `defense = { ... }` block, shared between `state.defense`
+    /// (folded by the caller into a `HashMap`) and `action.defense` (folded
+    /// into a `Vec` that preserves order and spans).
+    fn parse_defense_block(&mut self) -> Vec<(String, DefenseTarget, Span)> {
+        self.advance(); // consume 'defense'
+        if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
+            self.error(e);
+            self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+        }
+        if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
+            self.error(e);
+            self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+        }
+
+        let mut entries = Vec::new();
+        while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
+            match self.parse_defense_entry() {
+                Ok(entry) => entries.push(entry),
+                Err(e) => {
+                    self.error(e);
+                    self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                }
+            }
+            self.consume_if(TokenKind::Comma);
+        }
+        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
+            self.error(e);
+        }
+        entries
     }
 
     fn expect_arrow(&mut self) -> Result<PathType, ParseError> {
@@ -780,30 +788,12 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
-                            match self.parse_defense_entry() {
-                                Ok((defender, target, span)) => {
-                                    action.defenses.push(DefenseAction {
-                                        defender,
-                                        target,
-                                        span,
-                                    });
-                                }
-                                Err(e) => self.error(e),
-                            }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
+                    for (defender, target, span) in self.parse_defense_block() {
+                        action.defenses.push(DefenseAction {
+                            defender,
+                            target,
+                            span,
+                        });
                     }
                     self.consume_if(TokenKind::Comma);
                 }
