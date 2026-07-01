@@ -174,6 +174,8 @@ action = {
 
 defense represents a [defender](./defenders.md)'s movement during the play, using the same `-> `/`-[N]>` mark syntax and `= (x, y)` fixed-coordinate syntax as [state's defense block](./state.md#defense). Defense move lines are drawn thin and green, with their own arrowhead, to stand out from player move/screen/pass lines.
 
+A mark can also take a [timing](./timing.md) suffix (`:before`, `:middle`, `:after`) to track the marked player at their position at the start, midpoint, or end of the action, for example `d1 -> p1:after`.
+
 ```playbook
 players = {p1}
 defenders = {d1}

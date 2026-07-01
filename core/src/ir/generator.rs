@@ -20,18 +20,44 @@ fn offset_towards_center(pos: (f64, f64), distance: f64) -> (f64, f64) {
     (x - ux * distance, y - uy * distance)
 }
 
-/// Resolves what a defender's target position is, given the current
-/// player positions. A fixed `Position` always resolves; a `Mark` fails
-/// with the marked player's id if that player can't be found.
+/// Looks up a player's position for a given `timing` relative to a phase:
+/// `Before` uses the phase's start positions, `After`/`None` its end
+/// positions, and `Middle` the average of the two. Returns `None` if the
+/// player is absent from a map the timing needs.
+fn timed_position(
+    timing: &Timing,
+    player_id: &str,
+    start_positions: &HashMap<String, (f64, f64)>,
+    end_positions: &HashMap<String, (f64, f64)>,
+) -> Option<(f64, f64)> {
+    match timing {
+        Timing::Before => start_positions.get(player_id).copied(),
+        Timing::After | Timing::None => end_positions.get(player_id).copied(),
+        Timing::Middle => {
+            let start = start_positions.get(player_id).copied()?;
+            let end = end_positions.get(player_id).copied()?;
+            Some(((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0))
+        }
+    }
+}
+
+/// Resolves what a defender's target position is, given the player positions
+/// at the phase's start and end. A fixed `Position` always resolves; a `Mark`
+/// tracks the player at its `timing` position, offset towards the center, and
+/// fails with the marked player's id if that player can't be found.
 fn resolve_defense_target<'a>(
     target: &'a DefenseTarget,
-    positions: &HashMap<String, (f64, f64)>,
+    start_positions: &HashMap<String, (f64, f64)>,
+    end_positions: &HashMap<String, (f64, f64)>,
 ) -> Result<(f64, f64), &'a str> {
     match target {
         DefenseTarget::Position(x, y) => Ok((*x, *y)),
-        DefenseTarget::Mark { player, offset } => positions
-            .get(player)
-            .map(|p| offset_towards_center(*p, *offset))
+        DefenseTarget::Mark {
+            player,
+            offset,
+            timing,
+        } => timed_position(timing, player, start_positions, end_positions)
+            .map(|p| offset_towards_center(p, *offset))
             .ok_or(player),
     }
 }
@@ -47,7 +73,9 @@ fn resolve_initial_defense_positions(
     defense
         .iter()
         .map(|(defender, (target, span))| {
-            let pos = resolve_defense_target(target, positions)
+            // In `state`, players are static, so start and end positions are
+            // the same map; any Mark timing resolves to that fixed position.
+            let pos = resolve_defense_target(target, positions, positions)
                 .map_err(|player| IRError::UnexpectedPlayer(*span, player.to_string()))?;
             Ok((defender.clone(), pos))
         })
@@ -60,10 +88,8 @@ fn player_label(player_id: &str) -> &str {
     player_id.strip_prefix('p').unwrap_or(player_id)
 }
 
-/// Resolves a player's position for a given timing relative to a phase.
-///
-/// `Before` uses the phase's start positions, `After`/`None` its end
-/// positions, and `Middle` the average of the two.
+/// [`timed_position`] wrapper that fails with `IRError::UnexpectedPlayer`
+/// (carrying `span`) when the player can't be resolved.
 fn resolve_timed_position(
     timing: Timing,
     player_id: &str,
@@ -71,22 +97,8 @@ fn resolve_timed_position(
     start_positions: &HashMap<String, (f64, f64)>,
     end_positions: &HashMap<String, (f64, f64)>,
 ) -> Result<(f64, f64), IRError> {
-    let lookup = |positions: &HashMap<String, (f64, f64)>| {
-        positions
-            .get(player_id)
-            .copied()
-            .ok_or_else(|| IRError::UnexpectedPlayer(span, player_id.to_string()))
-    };
-
-    match timing {
-        Timing::Before => lookup(start_positions),
-        Timing::After | Timing::None => lookup(end_positions),
-        Timing::Middle => {
-            let start = lookup(start_positions)?;
-            let end = lookup(end_positions)?;
-            Ok(((start.0 + end.0) / 2.0, (start.1 + end.1) / 2.0))
-        }
-    }
+    timed_position(&timing, player_id, start_positions, end_positions)
+        .ok_or_else(|| IRError::UnexpectedPlayer(span, player_id.to_string()))
 }
 
 impl IRGenerator {
@@ -207,10 +219,14 @@ impl IRGenerator {
                     .get(&defense_action.defender)
                     .unwrap_or(&(0.0, 0.0));
 
-                let to = resolve_defense_target(&defense_action.target, &phase_end_positions)
-                    .map_err(|player| {
-                        IRError::UnexpectedPlayer(defense_action.span, player.to_string())
-                    })?;
+                let to = resolve_defense_target(
+                    &defense_action.target,
+                    &phase_start_positions,
+                    &phase_end_positions,
+                )
+                .map_err(|player| {
+                    IRError::UnexpectedPlayer(defense_action.span, player.to_string())
+                })?;
 
                 phase_end_defense_positions.insert(defense_action.defender.clone(), to);
                 interactions.push(Interaction::Defense(DefenseLine {
@@ -465,6 +481,7 @@ mod tests {
                 DefenseTarget::Mark {
                     player: "p1".to_string(),
                     offset: 10.0,
+                    timing: Timing::None,
                 },
                 dummy_span(),
             ),
@@ -526,6 +543,7 @@ mod tests {
                     target: DefenseTarget::Mark {
                         player: "p1".to_string(),
                         offset: 5.0,
+                        timing: Timing::None,
                     },
                     span: dummy_span(),
                 }],
@@ -556,6 +574,55 @@ mod tests {
     }
 
     #[test]
+    fn test_defender_mark_timing_tracks_start_middle_and_end() {
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), (0.0, 40.0));
+
+        // p1 moves from (0, 40) to (0, 80) in this phase. A defender marking
+        // p1 with `:before` tracks the start, `:after` the end, and `:middle`
+        // the midpoint (all offset 0 to isolate the timing behavior).
+        let mark = |defender: &str, timing: Timing| DefenseAction {
+            defender: defender.to_string(),
+            target: DefenseTarget::Mark {
+                player: "p1".to_string(),
+                offset: 0.0,
+                timing,
+            },
+            span: dummy_span(),
+        };
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            defenders: vec!["d1".to_string(), "d2".to_string(), "d3".to_string()],
+            state: State {
+                positions,
+                ..Default::default()
+            },
+            actions: vec![Action {
+                moves: vec![MoveAction {
+                    player: "p1".to_string(),
+                    target: (0.0, 80.0),
+                    path_type: PathType::Straight,
+                    span: dummy_span(),
+                }],
+                defenses: vec![
+                    mark("d1", Timing::Before),
+                    mark("d2", Timing::After),
+                    mark("d3", Timing::Middle),
+                ],
+                ..Default::default()
+            }],
+            comments: vec![],
+        };
+
+        let scene = IRGenerator::generate(playbook).unwrap();
+        let end_of = |id: &str| scene.entities.iter().find(|e| e.id == id).unwrap().end_pos;
+        assert_eq!(end_of("d1"), (0.0, 40.0)); // before -> p1 start
+        assert_eq!(end_of("d2"), (0.0, 80.0)); // after  -> p1 end
+        assert_eq!(end_of("d3"), (0.0, 60.0)); // middle -> midpoint
+    }
+
+    #[test]
     fn test_defense_mark_unknown_player_errors() {
         let playbook = Playbook {
             players: vec![],
@@ -567,6 +634,7 @@ mod tests {
                     target: DefenseTarget::Mark {
                         player: "p99".to_string(),
                         offset: 10.0,
+                        timing: Timing::None,
                     },
                     span: dummy_span(),
                 }],
@@ -592,6 +660,7 @@ mod tests {
                 DefenseTarget::Mark {
                     player: "p99".to_string(),
                     offset: 10.0,
+                    timing: Timing::None,
                 },
                 dummy_span(),
             ),
@@ -631,6 +700,7 @@ mod tests {
                 DefenseTarget::Mark {
                     player: "p1".to_string(),
                     offset: 10.0,
+                    timing: Timing::None,
                 },
                 dummy_span(),
             ),

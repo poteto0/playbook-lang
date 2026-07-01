@@ -517,6 +517,28 @@ impl Parser {
         }
     }
 
+    /// Parses an optional `:before` / `:after` / `:middle` timing suffix on a
+    /// player target, returning `Timing::None` when no `:` follows.
+    fn parse_optional_timing(&mut self) -> Result<Timing, ParseError> {
+        if self.peek().kind != TokenKind::Colon {
+            return Ok(Timing::None);
+        }
+        self.advance();
+        let timing = match self.peek().kind {
+            TokenKind::Before => Timing::Before,
+            TokenKind::After => Timing::After,
+            TokenKind::Middle => Timing::Middle,
+            _ => {
+                return Err(ParseError::UnexpectedToken(
+                    self.peek(),
+                    "Expected timing".to_string(),
+                ));
+            }
+        };
+        self.advance();
+        Ok(timing)
+    }
+
     /// Parses a single `defense` block entry, shared between `state.defense`
     /// and `action.defense`: `d = (x, y)` sets a fixed position, while
     /// `d -> p` / `d -[N]> p` marks (tracks) a player.
@@ -550,7 +572,16 @@ impl Parser {
                     Ok((defender, DefenseTarget::Position(x, y), span))
                 } else {
                     let player = self.expect_identifier()?;
-                    Ok((defender, DefenseTarget::Mark { player, offset }, span))
+                    let timing = self.parse_optional_timing()?;
+                    Ok((
+                        defender,
+                        DefenseTarget::Mark {
+                            player,
+                            offset,
+                            timing,
+                        },
+                        span,
+                    ))
                 }
             }
             TokenKind::Error(ref msg) => Err(ParseError::UnexpectedToken(self.peek(), msg.clone())),
@@ -713,30 +744,13 @@ impl Parser {
 
                                         match target_res {
                                             Ok(target) => {
-                                                let mut timing = Timing::None;
-                                                if self.peek().kind == TokenKind::Colon {
-                                                    self.advance();
-                                                    match self.peek().kind {
-                                                        TokenKind::Before => {
-                                                            self.advance();
-                                                            timing = Timing::Before;
-                                                        }
-                                                        TokenKind::After => {
-                                                            self.advance();
-                                                            timing = Timing::After;
-                                                        }
-                                                        TokenKind::Middle => {
-                                                            self.advance();
-                                                            timing = Timing::Middle;
-                                                        }
-                                                        _ => {
-                                                            self.error(ParseError::UnexpectedToken(
-                                                                self.peek(),
-                                                                "Expected timing".to_string(),
-                                                            ))
-                                                        }
+                                                let timing = match self.parse_optional_timing() {
+                                                    Ok(t) => t,
+                                                    Err(e) => {
+                                                        self.error(e);
+                                                        Timing::None
                                                     }
-                                                }
+                                                };
                                                 action.screens.push(ScreenAction {
                                                     player,
                                                     target,
@@ -1141,7 +1155,7 @@ mod tests {
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
 
         match playbook.state.defense.get("d1") {
-            Some((DefenseTarget::Mark { player, offset }, _)) => {
+            Some((DefenseTarget::Mark { player, offset, .. }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 20.0);
             }
@@ -1152,7 +1166,7 @@ mod tests {
             other => panic!("Expected Position for d2, got {:?}", other),
         }
         match playbook.state.defense.get("d3") {
-            Some((DefenseTarget::Mark { player, offset }, _)) => {
+            Some((DefenseTarget::Mark { player, offset, .. }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 7.0);
             }
@@ -1187,12 +1201,48 @@ mod tests {
         }
         assert_eq!(playbook.actions[0].defenses[1].defender, "d2");
         match &playbook.actions[0].defenses[1].target {
-            DefenseTarget::Mark { player, offset } => {
+            DefenseTarget::Mark { player, offset, .. } => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 20.0);
             }
             other => panic!("Expected Mark for d2, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_parse_action_defense_mark_timing() {
+        let input = r#"
+        players = { p1, p2, p3 }
+        defenders = { d1, d2, d3 }
+        state = { position = { p1 = (0, 0), p2 = (0, 0), p3 = (0, 0) } }
+        action = {
+            defense = {
+                d1 -> p1:before,
+                d2 -> p2:after,
+                d3 -> p3:middle,
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+        let timing_of = |defender: &str| {
+            playbook.actions[0]
+                .defenses
+                .iter()
+                .find(|d| d.defender == defender)
+                .map(|d| match &d.target {
+                    DefenseTarget::Mark { timing, .. } => timing.clone(),
+                    other => panic!("Expected Mark for {}, got {:?}", defender, other),
+                })
+                .unwrap()
+        };
+        assert_eq!(timing_of("d1"), Timing::Before);
+        assert_eq!(timing_of("d2"), Timing::After);
+        assert_eq!(timing_of("d3"), Timing::Middle);
     }
 
     #[test]
