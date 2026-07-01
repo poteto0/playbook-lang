@@ -37,5 +37,6 @@ export const
   before = 44,
   after = 45,
   middle = 46,
-  ActionsBlock = 47,
-  actions = 48
+  DefenseActionDefinition = 47,
+  ActionsBlock = 48,
+  actions = 49

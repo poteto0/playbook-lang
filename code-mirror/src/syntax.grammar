@@ -60,15 +60,20 @@ ActionsBlock {
 }
 
 ActionDefinition {
-  ActionType "=" "{" ActionBody "}"
+  ActionType "=" "{" ActionBody "}" |
+  DefenseActionDefinition
 }
 
 ActionType {
-  kw<"move"> | kw<"pass"> | kw<"screen"> | kw<"defense">
+  kw<"move"> | kw<"pass"> | kw<"screen">
 }
 
 ActionBody {
-  (Identifier | Coordinate) (Arrow (Identifier | Coordinate) (":" Timing)? | "=" Coordinate) ","?
+  (Identifier | Coordinate) Arrow (Identifier | Coordinate) (":" Timing)? ","?
+}
+
+DefenseActionDefinition {
+  kw<"defense"> "=" "{" DefenseEntry* "}"
 }
 
 Timing {
@@ -98,7 +103,7 @@ kw<term> { @specialize[@name={term}]<Identifier, term> }
   Identifier { $[a-zA-Z_] $[a-zA-Z0-9_]* }
   Number { "-"? @digit+ ("." @digit+)? }
   CurveArrow { "~" "[" ![\n\]]* "]" ">" }
-  OffsetArrow { "-" "[" ![\n\]]* "]" ">" }
+  OffsetArrow { "-" "[" "-"? @digit+ ("." @digit+)? "]" ">" }
 
   "{" "}" "[" "]" "(" ")" "=" "," ":" "->" "~>"
 }
