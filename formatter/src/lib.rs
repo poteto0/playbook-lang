@@ -221,99 +221,88 @@ impl Formatter {
         self.format_defenses(&action.defenses);
     }
 
-    fn format_moves(&mut self, moves: &[MoveAction]) {
-        if moves.is_empty() {
+    /// Shared scaffold for an action-block property (`move`, `screen`,
+    /// `pass`, `defense`): an empty check, the `<header> = {` line, one
+    /// indented line per item (each preceded by any comments that belong
+    /// before it and followed by a trailing comma), and the closing `},`.
+    /// `format_entry` writes just the entry's own line content (the part
+    /// between `self.indent()` and the trailing `,\n`, exclusive).
+    fn format_block<T>(
+        &mut self,
+        header: &str,
+        items: &[T],
+        mut format_entry: impl FnMut(&mut Self, &T),
+    ) {
+        if items.is_empty() {
             return;
         }
 
         self.push_str(&self.indent());
-        self.push_str("move = {\n");
+        self.push_str(header);
+        self.push_str(" = {\n");
         self.indent_level += 1;
-        for m in moves {
-            self.flush_comments(m.span.start);
-            self.push_str(&self.indent());
-            self.push_str(&m.player);
-            self.push_str(" ");
-            let path_str = self.format_path_type(&m.path_type);
-            self.push_str(&path_str);
-            self.push_str(&format!(" ({}, {}),\n", m.target.0, m.target.1));
+        for item in items {
+            format_entry(self, item);
         }
         self.indent_level -= 1;
         self.push_str(&self.indent());
         self.push_str("},\n");
+    }
+
+    fn format_moves(&mut self, moves: &[MoveAction]) {
+        self.format_block("move", moves, |this, m| {
+            this.flush_comments(m.span.start);
+            this.push_str(&this.indent());
+            this.push_str(&m.player);
+            this.push_str(" ");
+            let path_str = this.format_path_type(&m.path_type);
+            this.push_str(&path_str);
+            this.push_str(&format!(" ({}, {}),\n", m.target.0, m.target.1));
+        });
     }
 
     fn format_screens(&mut self, screens: &[ScreenAction]) {
-        if screens.is_empty() {
-            return;
-        }
-
-        self.push_str(&self.indent());
-        self.push_str("screen = {\n");
-        self.indent_level += 1;
-        for s in screens {
-            self.flush_comments(s.span.start);
-            self.push_str(&self.indent());
-            self.push_str(&s.player);
-            self.push_str(" ");
-            let path_str = self.format_path_type(&s.path_type);
-            self.push_str(&path_str);
-            self.push_str(" ");
+        self.format_block("screen", screens, |this, s| {
+            this.flush_comments(s.span.start);
+            this.push_str(&this.indent());
+            this.push_str(&s.player);
+            this.push_str(" ");
+            let path_str = this.format_path_type(&s.path_type);
+            this.push_str(&path_str);
+            this.push_str(" ");
             match &s.target {
-                ScreenTarget::Player(p) => self.push_str(p),
-                ScreenTarget::Coordinate(x, y) => self.push_str(&format!("({}, {})", x, y)),
+                ScreenTarget::Player(p) => this.push_str(p),
+                ScreenTarget::Coordinate(x, y) => this.push_str(&format!("({}, {})", x, y)),
             }
-            let timing_str = self.format_timing(&s.timing);
-            self.push_str(&timing_str);
-            self.push_str(",\n");
-        }
-        self.indent_level -= 1;
-        self.push_str(&self.indent());
-        self.push_str("},\n");
+            let timing_str = this.format_timing(&s.timing);
+            this.push_str(&timing_str);
+            this.push_str(",\n");
+        });
     }
 
     fn format_passes(&mut self, passes: &[PassAction]) {
-        if passes.is_empty() {
-            return;
-        }
-
-        self.push_str(&self.indent());
-        self.push_str("pass = {\n");
-        self.indent_level += 1;
-        for p in passes {
-            self.flush_comments(p.span.start);
-            self.push_str(&self.indent());
-            self.push_str(&p.from);
-            self.push_str(" -> ");
-            self.push_str(&p.to);
-            let timing_str = self.format_timing(&p.timing);
-            self.push_str(&timing_str);
-            self.push_str(",\n");
-        }
-        self.indent_level -= 1;
-        self.push_str(&self.indent());
-        self.push_str("},\n");
+        self.format_block("pass", passes, |this, p| {
+            this.flush_comments(p.span.start);
+            this.push_str(&this.indent());
+            this.push_str(&p.from);
+            this.push_str(" -> ");
+            this.push_str(&p.to);
+            let timing_str = this.format_timing(&p.timing);
+            this.push_str(&timing_str);
+            this.push_str(",\n");
+        });
     }
 
     fn format_defenses(&mut self, defenses: &[DefenseAction]) {
-        if defenses.is_empty() {
-            return;
-        }
-
-        self.push_str(&self.indent());
-        self.push_str("defense = {\n");
-        self.indent_level += 1;
-        for d in defenses {
-            self.flush_comments(d.span.start);
-            self.push_str(&self.indent());
-            self.push_str(&d.defender);
-            self.push_str(" ");
-            self.push_str(&self.format_defense_target(&d.target, "->"));
-            self.push_str(",\n");
-        }
-        self.indent_level -= 1;
-        self.push_str(&self.indent());
-        self.push_str("},\n");
+        self.format_block("defense", defenses, |this, d| {
+            this.flush_comments(d.span.start);
+            this.push_str(&this.indent());
+            this.push_str(&d.defender);
+            this.push_str(" ");
+            let target_str = this.format_defense_target(&d.target, "->");
+            this.push_str(&target_str);
+            this.push_str(",\n");
+        });
     }
 
     fn format_path_type(&self, path_type: &PathType) -> String {
