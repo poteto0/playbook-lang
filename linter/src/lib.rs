@@ -1,3 +1,4 @@
+use playbook_lang_core::ir::{IRError, IRGenerator};
 use playbook_lang_core::lexer::Lexer;
 use playbook_lang_core::parser::{ParseError, Parser};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,26 @@ pub struct LintDiagnostic {
     pub column: usize,
     pub message: String,
     pub severity: String,
+}
+
+/// Converts an `IRError` into a diagnostic, mirroring the message text used
+/// by `Renderer::format_ir_error` (core/src/renderer/mod.rs) so `lint` and
+/// `render`/`play` report the same wording for the same semantic error.
+fn ir_error_to_diagnostic(e: &IRError) -> LintDiagnostic {
+    match e {
+        IRError::UnexpectedPlayer(span, name) => LintDiagnostic {
+            line: span.line,
+            column: span.column,
+            message: format!("Player '{}' not found in state", name),
+            severity: "error".to_string(),
+        },
+        IRError::PlayerNotBaller(span, name) => LintDiagnostic {
+            line: span.line,
+            column: span.column,
+            message: format!("Player '{}' does not have the ball", name),
+            severity: "error".to_string(),
+        },
+    }
 }
 
 fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
@@ -30,33 +51,44 @@ fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
 
-    let (_, errors) = parser.parse();
+    let (playbook, errors) = parser.parse();
 
-    errors
-        .into_iter()
-        .map(|e| {
-            match e {
-                ParseError::UnexpectedToken(token, msg) => LintDiagnostic {
-                    line: token.span.line,
-                    column: token.span.column,
-                    message: msg,
-                    severity: "error".to_string(),
-                },
-                ParseError::InvalidSyntax(token, msg) => LintDiagnostic {
-                    line: token.span.line,
-                    column: token.span.column,
-                    message: msg,
-                    severity: "error".to_string(),
-                },
-                ParseError::UnexpectedEOF => LintDiagnostic {
-                    line: 0,
-                    column: 0, // TODO: improve location for EOF
-                    message: "Unexpected End of File".to_string(),
-                    severity: "error".to_string(),
-                },
-            }
-        })
-        .collect()
+    if !errors.is_empty() {
+        return errors
+            .into_iter()
+            .map(|e| {
+                match e {
+                    ParseError::UnexpectedToken(token, msg) => LintDiagnostic {
+                        line: token.span.line,
+                        column: token.span.column,
+                        message: msg,
+                        severity: "error".to_string(),
+                    },
+                    ParseError::InvalidSyntax(token, msg) => LintDiagnostic {
+                        line: token.span.line,
+                        column: token.span.column,
+                        message: msg,
+                        severity: "error".to_string(),
+                    },
+                    ParseError::UnexpectedEOF => LintDiagnostic {
+                        line: 0,
+                        column: 0, // TODO: improve location for EOF
+                        message: "Unexpected End of File".to_string(),
+                        severity: "error".to_string(),
+                    },
+                }
+            })
+            .collect();
+    }
+
+    // Lexing and parsing succeeded with no diagnostics; also run IR
+    // generation so semantic errors (e.g. a `move`/`pass`/`defense` entry
+    // referencing an unknown player) are caught by `lint`/`lint_playbook`
+    // the same way they are by `render`/`play`.
+    match IRGenerator::generate(playbook) {
+        Ok(_) => Vec::new(),
+        Err(e) => vec![ir_error_to_diagnostic(&e)],
+    }
 }
 
 #[wasm_bindgen]
@@ -76,9 +108,12 @@ mod tests {
 
     #[test]
     fn test_lint_valid_playbook() {
-        let input = "players = { p1 } state = { baller = p1 } action = { move = { p1 -> (0,0) } }";
+        // p1 needs a starting position, otherwise the `move` below is itself
+        // a semantic error (an unknown-position player), which is exactly
+        // the class of bug this linter pass now catches.
+        let input = "players = { p1 } state = { baller = p1, position = { p1 = (0, 0) } } action = { move = { p1 -> (0,0) } }";
         let diagnostics = lint_playbook_internal(input);
-        assert!(diagnostics.is_empty());
+        assert!(diagnostics.is_empty(), "diagnostics: {:?}", diagnostics);
     }
 
     #[test]
@@ -119,5 +154,106 @@ mod tests {
                 .message
                 .contains("Input exceeds maximum allowed size")
         );
+    }
+
+    #[test]
+    fn test_lint_move_unknown_player_is_semantic_error() {
+        // Lexing and parsing succeed (no syntax diagnostics), but the move
+        // references a player that was never defined, which previously only
+        // surfaced as an IRError from `render`/`play`, never from `lint`.
+        let input = r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        action = { move = { p2 -> (0, 0) } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("p2"));
+        assert!(diagnostics[0].message.contains("not found"));
+    }
+
+    #[test]
+    fn test_lint_pass_without_ball_is_semantic_error() {
+        let input = r#"
+        players = { p1, p2 }
+        state = { baller = p2, position = { p1 = (0, 0), p2 = (10, 10) } }
+        action = { pass = { p1 -> p2 } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("p1"));
+        assert!(diagnostics[0].message.contains("does not have the ball"));
+    }
+
+    #[test]
+    fn test_lint_screen_unknown_player_is_semantic_error() {
+        let input = r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        action = { screen = { p1 -> p2 } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("p2"));
+        assert!(diagnostics[0].message.contains("not found"));
+    }
+
+    #[test]
+    fn test_lint_defense_mark_unknown_player_is_semantic_error() {
+        // The case called out in the review: `defense = { d1 -> nosuchplayer }`
+        // must produce a lint diagnostic, matching `render`/`play`'s
+        // `IRError::UnexpectedPlayer`.
+        let input = r#"
+        players = { p1 }
+        defenders = { d1 }
+        state = { position = { p1 = (0, 0) } }
+        action = { defense = { d1 -> nosuchplayer } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("nosuchplayer"));
+        assert!(diagnostics[0].message.contains("not found"));
+    }
+
+    #[test]
+    fn test_lint_state_defense_mark_unknown_player_is_semantic_error() {
+        let input = r#"
+        players = { p1 }
+        defenders = { d1 }
+        state = {
+            position = { p1 = (0, 0) },
+            defense = { d1 -> nosuchplayer },
+        }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("nosuchplayer"));
+    }
+
+    #[test]
+    fn test_lint_valid_playbook_with_defense_lints_clean() {
+        // A syntactically and semantically valid file (including the new
+        // defense-mode syntax) must still lint clean end-to-end.
+        let input = r#"
+        players = { p1, p2 }
+        defenders = { d1 }
+        state = {
+            baller = p1,
+            position = { p1 = (0, 0), p2 = (10, 10) },
+            defense = { d1 -> p2 },
+        }
+        action = {
+            move = { p1 -> (5, 5) },
+            pass = { p1 -> p2 },
+            defense = { d1 -> p2 },
+        }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert!(diagnostics.is_empty(), "diagnostics: {:?}", diagnostics);
     }
 }
