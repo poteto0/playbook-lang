@@ -27,10 +27,16 @@ pub struct Action {
 
 /// Where a defender is assigned to: a fixed court coordinate, or marking
 /// (tracking) a player, offset towards the center of the court by `offset`.
+/// A marked player is tracked at the position given by `timing` within the
+/// action phase (its start, end, or midpoint).
 #[derive(Debug, PartialEq, Clone)]
 pub enum DefenseTarget {
     Position(f64, f64),
-    Mark { player: String, offset: f64 },
+    Mark {
+        player: String,
+        offset: f64,
+        timing: Timing,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]

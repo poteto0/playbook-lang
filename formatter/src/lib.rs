@@ -123,7 +123,11 @@ impl Formatter {
     fn format_defense_target(&self, target: &DefenseTarget, coord_op: &str) -> String {
         match target {
             DefenseTarget::Position(x, y) => format!("{} ({}, {})", coord_op, x, y),
-            DefenseTarget::Mark { player, offset } => format!("-[{}]> {}", offset, player),
+            DefenseTarget::Mark {
+                player,
+                offset,
+                timing,
+            } => format!("-[{}]> {}{}", offset, player, self.format_timing(timing)),
         }
     }
 

@@ -112,4 +112,19 @@ describe("Playbook Grammar", () => {
     const topLevel = tree.topNode.firstChild;
     expect(topLevel?.firstChild?.name).toBe("ActionBlock");
   });
+
+  it("parses action defense block (mark with timing)", () => {
+    const input = `action = {
+      defense = {
+        d1 -> p1:before,
+        d2 -> p2:after,
+        d3 -> p3:middle,
+      }
+    }`;
+    const tree = parser.parse(input);
+    expect(tree.toString()).not.toContain("⚠");
+    expect(tree.toString()).toContain("Timing");
+    const topLevel = tree.topNode.firstChild;
+    expect(topLevel?.firstChild?.name).toBe("ActionBlock");
+  });
 });

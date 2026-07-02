@@ -32,3 +32,22 @@ The following three actions are allowed in Pass Action:
 
 - `before`
 - `after`
+
+### Defense Action
+
+When a defender marks a player, the timing selects which position of that player is tracked within the action. The following three actions are allowed in Defense Action:
+
+- `before`
+- `middle`
+- `after`
+
+```playbook
+action = {
+  move = {
+    p1 -> (0, 80),
+  },
+  defense = {
+    d1 -> p1:before,
+  },
+}
+```

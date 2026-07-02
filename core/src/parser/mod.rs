@@ -552,7 +552,7 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
-                    for (defender, target, span) in self.parse_defense_block() {
+                    for (defender, target, span) in self.parse_defense_block(false) {
                         state.defense.insert(defender, (target, span));
                     }
                     self.consume_if(TokenKind::Comma);
@@ -614,8 +614,14 @@ impl Parser {
 
     /// Parses a single `defense` block entry, shared between `state.defense`
     /// and `action.defense`: `d = (x, y)` sets a fixed position, while
-    /// `d -> p` / `d -[N]> p` marks (tracks) a player.
-    fn parse_defense_entry(&mut self) -> Result<(String, DefenseTarget, Span), ParseError> {
+    /// `d -> p` / `d -[N]> p` marks (tracks) a player. A `:before` /
+    /// `:middle` / `:after` timing suffix on the marked player is only
+    /// meaningful while the action plays out, so it is accepted only when
+    /// `allow_timing` (action.defense) and rejected in state.defense.
+    fn parse_defense_entry(
+        &mut self,
+        allow_timing: bool,
+    ) -> Result<(String, DefenseTarget, Span), ParseError> {
         let span = self.peek_span();
         let defender = self.expect_identifier()?;
         match self.peek().kind {
@@ -645,7 +651,27 @@ impl Parser {
                     Ok((defender, DefenseTarget::Position(x, y), span))
                 } else {
                     let player = self.expect_identifier()?;
-                    Ok((defender, DefenseTarget::Mark { player, offset }, span))
+                    // Parse (and consume) any timing suffix even when it is
+                    // not allowed, so it doesn't split the entry during the
+                    // caller's error recovery; reject it afterwards.
+                    let colon_token = self.peek();
+                    let mut timing = self.parse_optional_timing(true);
+                    if !allow_timing && timing != Timing::None {
+                        self.error(ParseError::InvalidSyntax(
+                            colon_token,
+                            "Timing suffix is not allowed in state.defense; timing only applies to action.defense marks".to_string(),
+                        ));
+                        timing = Timing::None;
+                    }
+                    Ok((
+                        defender,
+                        DefenseTarget::Mark {
+                            player,
+                            offset,
+                            timing,
+                        },
+                        span,
+                    ))
                 }
             }
             TokenKind::Error(ref msg) => Err(ParseError::UnexpectedToken(self.peek(), msg.clone())),
@@ -659,14 +685,14 @@ impl Parser {
     /// Parses a `defense = { ... }` block, shared between `state.defense`
     /// (folded by the caller into a `HashMap`) and `action.defense` (folded
     /// into a `Vec` that preserves order and spans).
-    fn parse_defense_block(&mut self) -> Vec<(String, DefenseTarget, Span)> {
+    fn parse_defense_block(&mut self, allow_timing: bool) -> Vec<(String, DefenseTarget, Span)> {
         let mut entries = Vec::new();
         self.parse_braced_block(
             BracedBlockRecovery {
                 recover_on_header_error: true,
                 always_parse_body: true,
             },
-            |p| match p.parse_defense_entry() {
+            |p| match p.parse_defense_entry(allow_timing) {
                 Ok(entry) => entries.push(entry),
                 Err(e) => {
                     p.error(e);
@@ -842,7 +868,7 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
-                    for (defender, target, span) in self.parse_defense_block() {
+                    for (defender, target, span) in self.parse_defense_block(true) {
                         action.defenses.push(DefenseAction {
                             defender,
                             target,
@@ -1163,7 +1189,7 @@ mod tests {
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
 
         match playbook.state.defense.get("d1") {
-            Some((DefenseTarget::Mark { player, offset }, _)) => {
+            Some((DefenseTarget::Mark { player, offset, .. }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 20.0);
             }
@@ -1174,7 +1200,7 @@ mod tests {
             other => panic!("Expected Position for d2, got {:?}", other),
         }
         match playbook.state.defense.get("d3") {
-            Some((DefenseTarget::Mark { player, offset }, _)) => {
+            Some((DefenseTarget::Mark { player, offset, .. }, _)) => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 7.0);
             }
@@ -1209,11 +1235,114 @@ mod tests {
         }
         assert_eq!(playbook.actions[0].defenses[1].defender, "d2");
         match &playbook.actions[0].defenses[1].target {
-            DefenseTarget::Mark { player, offset } => {
+            DefenseTarget::Mark { player, offset, .. } => {
                 assert_eq!(player, "p1");
                 assert_eq!(*offset, 20.0);
             }
             other => panic!("Expected Mark for d2, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_action_defense_mark_timing() {
+        let input = r#"
+        players = { p1, p2, p3 }
+        defenders = { d1, d2, d3 }
+        state = { position = { p1 = (0, 0), p2 = (0, 0), p3 = (0, 0) } }
+        action = {
+            defense = {
+                d1 -> p1:before,
+                d2 -> p2:after,
+                d3 -> p3:middle,
+            },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+        let timing_of = |defender: &str| {
+            playbook.actions[0]
+                .defenses
+                .iter()
+                .find(|d| d.defender == defender)
+                .map(|d| match &d.target {
+                    DefenseTarget::Mark { timing, .. } => timing.clone(),
+                    other => panic!("Expected Mark for {}, got {:?}", defender, other),
+                })
+                .unwrap()
+        };
+        assert_eq!(timing_of("d1"), Timing::Before);
+        assert_eq!(timing_of("d2"), Timing::After);
+        assert_eq!(timing_of("d3"), Timing::Middle);
+    }
+
+    #[test]
+    fn test_parse_state_defense_mark_timing_is_rejected() {
+        let input = r#"
+        players = { p1, p2 }
+        defenders = { d1, d2 }
+        state = {
+            position = { p1 = (0, 0), p2 = (0, 0) },
+            defense = { d1 -> p1:middle, d2 -> p2 },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+
+        let found = errors.iter().any(|e| match e {
+            ParseError::InvalidSyntax(_, msg) => msg.contains("not allowed in state.defense"),
+            _ => false,
+        });
+        assert!(found, "expected InvalidSyntax error, got {:?}", errors);
+
+        // Both marks survive; the rejected timing falls back to None.
+        for defender in ["d1", "d2"] {
+            match &playbook.state.defense.get(defender).unwrap().0 {
+                DefenseTarget::Mark { timing, .. } => assert_eq!(*timing, Timing::None),
+                other => panic!("Expected Mark for {}, got {:?}", defender, other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_action_defense_mark_invalid_timing_keeps_mark() {
+        let input = r#"
+        players = { p1, p2 }
+        defenders = { d1, d2 }
+        state = { position = { p1 = (0, 0), p2 = (0, 0) } }
+        action = {
+            defense = { d1 -> p1:oops, d2 -> p2 },
+        }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+
+        let found = errors.iter().any(|e| match e {
+            ParseError::UnexpectedToken(_, msg) => msg.contains("Expected timing"),
+            _ => false,
+        });
+        assert!(found, "expected 'Expected timing' error, got {:?}", errors);
+
+        // Like screens, an invalid timing keeps the parsed mark with
+        // Timing::None instead of discarding the whole entry.
+        let defenses = &playbook.actions[0].defenses;
+        for defender in ["d1", "d2"] {
+            let target = &defenses
+                .iter()
+                .find(|d| d.defender == defender)
+                .unwrap_or_else(|| panic!("mark for {} was discarded", defender))
+                .target;
+            match target {
+                DefenseTarget::Mark { timing, .. } => assert_eq!(*timing, Timing::None),
+                other => panic!("Expected Mark for {}, got {:?}", defender, other),
+            }
         }
     }
 
