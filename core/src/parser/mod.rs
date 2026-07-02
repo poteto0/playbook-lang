@@ -651,25 +651,18 @@ impl Parser {
                     Ok((defender, DefenseTarget::Position(x, y), span))
                 } else {
                     let player = self.expect_identifier()?;
-                    let timing = if allow_timing || self.peek().kind != TokenKind::Colon {
-                        self.parse_optional_timing(true)
-                    } else {
-                        let colon_token = self.peek();
-                        // Consume the suffix so it doesn't split the entry
-                        // during the caller's error recovery.
-                        self.advance();
-                        if matches!(
-                            self.peek().kind,
-                            TokenKind::Before | TokenKind::After | TokenKind::Middle
-                        ) {
-                            self.advance();
-                        }
+                    // Parse (and consume) any timing suffix even when it is
+                    // not allowed, so it doesn't split the entry during the
+                    // caller's error recovery; reject it afterwards.
+                    let colon_token = self.peek();
+                    let mut timing = self.parse_optional_timing(true);
+                    if !allow_timing && timing != Timing::None {
                         self.error(ParseError::InvalidSyntax(
                             colon_token,
                             "Timing suffix is not allowed in state.defense; timing only applies to action.defense marks".to_string(),
                         ));
-                        Timing::None
-                    };
+                        timing = Timing::None;
+                    }
                     Ok((
                         defender,
                         DefenseTarget::Mark {
