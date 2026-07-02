@@ -267,6 +267,40 @@ impl Parser {
         }
     }
 
+    /// Parses an optional `: before` / `: after` (/ `: middle`) timing
+    /// suffix. Returns `Timing::None` without consuming anything if the
+    /// next token is not `:`. Otherwise consumes the `:` and the timing
+    /// keyword, accepting `before`/`after` always and `middle` only when
+    /// `allow_middle`; anything else records an "Expected timing" error
+    /// (without advancing past the offending token) and yields
+    /// `Timing::None`.
+    fn parse_optional_timing(&mut self, allow_middle: bool) -> Timing {
+        if !self.consume_if(TokenKind::Colon) {
+            return Timing::None;
+        }
+        match self.peek().kind {
+            TokenKind::Before => {
+                self.advance();
+                Timing::Before
+            }
+            TokenKind::After => {
+                self.advance();
+                Timing::After
+            }
+            TokenKind::Middle if allow_middle => {
+                self.advance();
+                Timing::Middle
+            }
+            _ => {
+                self.error(ParseError::UnexpectedToken(
+                    self.peek(),
+                    "Expected timing".to_string(),
+                ));
+                Timing::None
+            }
+        }
+    }
+
     fn parse_coordinate(&mut self) -> Result<(f64, f64), ParseError> {
         self.expect_and_advance(TokenKind::LParenthesis)?;
         let token = self.advance();
@@ -322,9 +356,7 @@ impl Parser {
                     self.parse_state_section(&mut state);
                 }
                 TokenKind::Action => {
-                    if let Some(action) = self.parse_single_action_section() {
-                        actions.push(action);
-                    }
+                    actions.push(self.parse_single_action_section());
                 }
                 TokenKind::Actions => {
                     self.parse_actions_section(&mut actions);
@@ -425,7 +457,7 @@ impl Parser {
         }
     }
 
-    fn parse_single_action_section(&mut self) -> Option<Action> {
+    fn parse_single_action_section(&mut self) -> Action {
         self.advance(); // consume 'action'
         if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
             self.error(e);
@@ -437,7 +469,7 @@ impl Parser {
         if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
             self.error(e);
         }
-        Some(action)
+        action
     }
 
     fn parse_actions_section(&mut self, actions: &mut Vec<Action>) {
@@ -470,9 +502,7 @@ impl Parser {
                 ));
             }
 
-            if let Some(action) = self.parse_single_action_section() {
-                actions.push(action);
-            }
+            actions.push(self.parse_single_action_section());
 
             self.consume_if(TokenKind::Comma);
         }
@@ -758,28 +788,7 @@ impl Parser {
 
                                         match target_res {
                                             Ok(target) => {
-                                                let mut timing = Timing::None;
-                                                if p.peek().kind == TokenKind::Colon {
-                                                    p.advance();
-                                                    match p.peek().kind {
-                                                        TokenKind::Before => {
-                                                            p.advance();
-                                                            timing = Timing::Before;
-                                                        }
-                                                        TokenKind::After => {
-                                                            p.advance();
-                                                            timing = Timing::After;
-                                                        }
-                                                        TokenKind::Middle => {
-                                                            p.advance();
-                                                            timing = Timing::Middle;
-                                                        }
-                                                        _ => p.error(ParseError::UnexpectedToken(
-                                                            p.peek(),
-                                                            "Expected timing".to_string(),
-                                                        )),
-                                                    }
-                                                }
+                                                let timing = p.parse_optional_timing(true);
                                                 action.screens.push(ScreenAction {
                                                     player,
                                                     target,
@@ -814,24 +823,7 @@ impl Parser {
                                     } else {
                                         match p.expect_identifier() {
                                             Ok(to) => {
-                                                let mut timing = Timing::None;
-                                                if p.peek().kind == TokenKind::Colon {
-                                                    p.advance();
-                                                    match p.peek().kind {
-                                                        TokenKind::Before => {
-                                                            p.advance();
-                                                            timing = Timing::Before;
-                                                        }
-                                                        TokenKind::After => {
-                                                            p.advance();
-                                                            timing = Timing::After;
-                                                        }
-                                                        _ => p.error(ParseError::UnexpectedToken(
-                                                            p.peek(),
-                                                            "Expected timing".to_string(),
-                                                        )),
-                                                    }
-                                                }
+                                                let timing = p.parse_optional_timing(false);
                                                 action.passes.push(PassAction {
                                                     from,
                                                     to,
