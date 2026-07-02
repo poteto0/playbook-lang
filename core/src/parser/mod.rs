@@ -37,6 +37,24 @@ pub struct Parser {
     comments: Vec<(Span, String)>,
 }
 
+/// Controls how `Parser::parse_braced_block` recovers from a missing `=` or
+/// `{` in a block header. The five original hand-written copies of this
+/// scaffold split into two clusters here (see the pinning tests in
+/// `tests::test_recovery_*`):
+#[derive(Clone, Copy)]
+struct BracedBlockRecovery {
+    /// Call `recover_until(&[Comma, RBrace])` immediately after a `=` or `{`
+    /// parse failure. The move/screen/pass loops leave this `false`; the
+    /// `position` loop and `parse_defense_block` set it `true`.
+    recover_on_header_error: bool,
+    /// If `true`, always attempt `{` (even if `=` failed) and always enter
+    /// the entry loop and attempt the closing `}` (even if the header
+    /// failed). Only `parse_defense_block` sets this `true`; the
+    /// move/screen/pass/position loops leave it `false`, which
+    /// short-circuits the body entirely on any header failure.
+    always_parse_body: bool,
+}
+
 fn levenshtein(a: &str, b: &str) -> usize {
     let len_a = a.chars().count();
     let len_b = b.chars().count();
@@ -188,6 +206,64 @@ impl Parser {
             true
         } else {
             false
+        }
+    }
+
+    /// Parses a `<keyword> = { entry, entry, ... }` brace-delimited block:
+    /// consume the section keyword, consume `=`, consume `{`, loop calling
+    /// `parse_entry` for each comma-separated entry until `}`/EOF, then
+    /// consume `}`. Shared by the move/screen/pass loops in
+    /// `parse_action_block`, the `position` loop in `parse_state_block`,
+    /// and `parse_defense_block`.
+    ///
+    /// `parse_entry` is responsible for its own error recording (and, if it
+    /// wants per-entry recovery, calling `recover_until` itself) -- this
+    /// helper does not add any recovery around individual entries, so each
+    /// call site's existing per-entry behavior is preserved verbatim.
+    ///
+    /// `recovery` controls the two ways the five original copies differ in
+    /// *header* (`=`/`{`) recovery; see `BracedBlockRecovery` for what each
+    /// flag preserves.
+    fn parse_braced_block<F>(&mut self, recovery: BracedBlockRecovery, mut parse_entry: F)
+    where
+        F: FnMut(&mut Self),
+    {
+        self.advance(); // consume section keyword
+
+        let eq_ok = match self.expect_and_advance(TokenKind::Equals) {
+            Ok(()) => true,
+            Err(e) => {
+                self.error(e);
+                if recovery.recover_on_header_error {
+                    self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                }
+                false
+            }
+        };
+
+        let brace_ok = if recovery.always_parse_body || eq_ok {
+            match self.expect_and_advance(TokenKind::LBrace) {
+                Ok(()) => true,
+                Err(e) => {
+                    self.error(e);
+                    if recovery.recover_on_header_error {
+                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                    }
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
+        if recovery.always_parse_body || (eq_ok && brace_ok) {
+            while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
+                parse_entry(self);
+                self.consume_if(TokenKind::Comma);
+            }
+            if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
+                self.error(e);
+            }
         }
     }
 
@@ -422,38 +498,27 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Position => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
-                            match self.expect_identifier() {
-                                Ok(player) => {
-                                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                                        self.error(e);
-                                    } else {
-                                        match self.parse_coordinate() {
-                                            Ok(coord) => {
-                                                state.positions.insert(player, coord);
-                                            }
-                                            Err(e) => self.error(e),
+                    self.parse_braced_block(
+                        BracedBlockRecovery {
+                            recover_on_header_error: true,
+                            always_parse_body: false,
+                        },
+                        |p| match p.expect_identifier() {
+                            Ok(player) => {
+                                if let Err(e) = p.expect_and_advance(TokenKind::Equals) {
+                                    p.error(e);
+                                } else {
+                                    match p.parse_coordinate() {
+                                        Ok(coord) => {
+                                            state.positions.insert(player, coord);
                                         }
+                                        Err(e) => p.error(e),
                                     }
                                 }
-                                Err(e) => self.error(e),
                             }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
-                    }
+                            Err(e) => p.error(e),
+                        },
+                    );
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
@@ -565,30 +630,20 @@ impl Parser {
     /// (folded by the caller into a `HashMap`) and `action.defense` (folded
     /// into a `Vec` that preserves order and spans).
     fn parse_defense_block(&mut self) -> Vec<(String, DefenseTarget, Span)> {
-        self.advance(); // consume 'defense'
-        if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-            self.error(e);
-            self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-        }
-        if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-            self.error(e);
-            self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-        }
-
         let mut entries = Vec::new();
-        while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
-            match self.parse_defense_entry() {
+        self.parse_braced_block(
+            BracedBlockRecovery {
+                recover_on_header_error: true,
+                always_parse_body: true,
+            },
+            |p| match p.parse_defense_entry() {
                 Ok(entry) => entries.push(entry),
                 Err(e) => {
-                    self.error(e);
-                    self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
+                    p.error(e);
+                    p.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
                 }
-            }
-            self.consume_if(TokenKind::Comma);
-        }
-        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-            self.error(e);
-        }
+            },
+        );
         entries
     }
 
@@ -653,20 +708,17 @@ impl Parser {
         while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
             match self.peek().kind {
                 TokenKind::Move => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
+                    self.parse_braced_block(
+                        BracedBlockRecovery {
+                            recover_on_header_error: false,
+                            always_parse_body: false,
+                        },
+                        |p| {
                             // Try parsing a move line: player -> target
-                            let span = self.peek_span();
-                            match self.expect_identifier() {
-                                Ok(player) => match self.expect_arrow() {
-                                    Ok(path_type) => match self.parse_coordinate() {
+                            let span = p.peek_span();
+                            match p.expect_identifier() {
+                                Ok(player) => match p.expect_arrow() {
+                                    Ok(path_type) => match p.parse_coordinate() {
                                         Ok(target) => {
                                             action.moves.push(MoveAction {
                                                 player,
@@ -675,66 +727,57 @@ impl Parser {
                                                 span,
                                             });
                                         }
-                                        Err(e) => self.error(e),
+                                        Err(e) => p.error(e),
                                     },
-                                    Err(e) => self.error(e),
+                                    Err(e) => p.error(e),
                                 },
-                                Err(e) => self.error(e),
+                                Err(e) => p.error(e),
                             }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
-                    }
+                        },
+                    );
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Screen => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
-                            let span = self.peek_span();
-                            match self.expect_identifier() {
-                                Ok(player) => match self.expect_arrow() {
+                    self.parse_braced_block(
+                        BracedBlockRecovery {
+                            recover_on_header_error: false,
+                            always_parse_body: false,
+                        },
+                        |p| {
+                            let span = p.peek_span();
+                            match p.expect_identifier() {
+                                Ok(player) => match p.expect_arrow() {
                                     Ok(path_type) => {
-                                        let target_res =
-                                            if self.peek().kind == TokenKind::LParenthesis {
-                                                self.parse_coordinate()
-                                                    .map(|(x, y)| ScreenTarget::Coordinate(x, y))
-                                            } else {
-                                                self.expect_identifier().map(ScreenTarget::Player)
-                                            };
+                                        let target_res = if p.peek().kind == TokenKind::LParenthesis
+                                        {
+                                            p.parse_coordinate()
+                                                .map(|(x, y)| ScreenTarget::Coordinate(x, y))
+                                        } else {
+                                            p.expect_identifier().map(ScreenTarget::Player)
+                                        };
 
                                         match target_res {
                                             Ok(target) => {
                                                 let mut timing = Timing::None;
-                                                if self.peek().kind == TokenKind::Colon {
-                                                    self.advance();
-                                                    match self.peek().kind {
+                                                if p.peek().kind == TokenKind::Colon {
+                                                    p.advance();
+                                                    match p.peek().kind {
                                                         TokenKind::Before => {
-                                                            self.advance();
+                                                            p.advance();
                                                             timing = Timing::Before;
                                                         }
                                                         TokenKind::After => {
-                                                            self.advance();
+                                                            p.advance();
                                                             timing = Timing::After;
                                                         }
                                                         TokenKind::Middle => {
-                                                            self.advance();
+                                                            p.advance();
                                                             timing = Timing::Middle;
                                                         }
-                                                        _ => {
-                                                            self.error(ParseError::UnexpectedToken(
-                                                                self.peek(),
-                                                                "Expected timing".to_string(),
-                                                            ))
-                                                        }
+                                                        _ => p.error(ParseError::UnexpectedToken(
+                                                            p.peek(),
+                                                            "Expected timing".to_string(),
+                                                        )),
                                                     }
                                                 }
                                                 action.screens.push(ScreenAction {
@@ -745,57 +788,48 @@ impl Parser {
                                                     span,
                                                 });
                                             }
-                                            Err(e) => self.error(e),
+                                            Err(e) => p.error(e),
                                         }
                                     }
-                                    Err(e) => self.error(e),
+                                    Err(e) => p.error(e),
                                 },
-                                Err(e) => self.error(e),
+                                Err(e) => p.error(e),
                             }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
-                    }
+                        },
+                    );
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Pass => {
-                    self.advance();
-                    if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
-                        self.error(e);
-                    } else if let Err(e) = self.expect_and_advance(TokenKind::LBrace) {
-                        self.error(e);
-                    } else {
-                        while self.peek().kind != TokenKind::RBrace
-                            && self.peek().kind != TokenKind::EOF
-                        {
-                            let span = self.peek_span();
-                            match self.expect_identifier() {
+                    self.parse_braced_block(
+                        BracedBlockRecovery {
+                            recover_on_header_error: false,
+                            always_parse_body: false,
+                        },
+                        |p| {
+                            let span = p.peek_span();
+                            match p.expect_identifier() {
                                 Ok(from) => {
-                                    if let Err(e) = self.expect_and_advance(TokenKind::Arrow) {
-                                        self.error(e);
+                                    if let Err(e) = p.expect_and_advance(TokenKind::Arrow) {
+                                        p.error(e);
                                     } else {
-                                        match self.expect_identifier() {
+                                        match p.expect_identifier() {
                                             Ok(to) => {
                                                 let mut timing = Timing::None;
-                                                if self.peek().kind == TokenKind::Colon {
-                                                    self.advance();
-                                                    match self.peek().kind {
+                                                if p.peek().kind == TokenKind::Colon {
+                                                    p.advance();
+                                                    match p.peek().kind {
                                                         TokenKind::Before => {
-                                                            self.advance();
+                                                            p.advance();
                                                             timing = Timing::Before;
                                                         }
                                                         TokenKind::After => {
-                                                            self.advance();
+                                                            p.advance();
                                                             timing = Timing::After;
                                                         }
-                                                        _ => {
-                                                            self.error(ParseError::UnexpectedToken(
-                                                                self.peek(),
-                                                                "Expected timing".to_string(),
-                                                            ))
-                                                        }
+                                                        _ => p.error(ParseError::UnexpectedToken(
+                                                            p.peek(),
+                                                            "Expected timing".to_string(),
+                                                        )),
                                                     }
                                                 }
                                                 action.passes.push(PassAction {
@@ -805,18 +839,14 @@ impl Parser {
                                                     span,
                                                 });
                                             }
-                                            Err(e) => self.error(e),
+                                            Err(e) => p.error(e),
                                         }
                                     }
                                 }
-                                Err(e) => self.error(e),
+                                Err(e) => p.error(e),
                             }
-                            self.consume_if(TokenKind::Comma);
-                        }
-                        if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
-                            self.error(e);
-                        }
-                    }
+                        },
+                    );
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
@@ -1251,5 +1281,425 @@ mod tests {
             _ => false,
         });
         assert!(found, "expected InvalidSyntax error, got {:?}", errors);
+    }
+
+    // ------------------------------------------------------------------
+    // Braced-block error-recovery pinning tests.
+    //
+    // These pin the *current* recovery behavior of the five "consume `=`,
+    // consume `{`, loop entries with comma-separated recovery, consume `}`"
+    // copies in this file (move/screen/pass loops in `parse_action_block`,
+    // the `position` loop in `parse_state_block`, and `parse_defense_block`,
+    // shared by `state.defense` and `action.defense`) before they are
+    // unified behind a shared `parse_braced_block` helper. Exploration
+    // (see PR follow-up notes) found the five copies fall into three
+    // distinct behavior clusters:
+    //
+    // Cluster A (move, screen, pass): on a missing `=` or `{`, the error is
+    // recorded but `recover_until` is NOT called, and the entry loop /
+    // closing-brace check are skipped entirely (short-circuited), leaving
+    // leftover tokens for the *caller's* own recovery loop to reinterpret
+    // (visible as extra cascading errors below).
+    //
+    // Cluster B (state.position): same short-circuiting as cluster A, but
+    // DOES call `recover_until(&[Comma, RBrace])` after a missing `=` or
+    // `{`.
+    //
+    // Cluster C (parse_defense_block, shared by state.defense and
+    // action.defense): calls `recover_until` after a missing `=` or `{`
+    // (like B), but does NOT short-circuit -- it always attempts `{`
+    // (even if `=` failed) and always enters the entry loop and attempts
+    // the closing `}` (even if the header failed).
+    //
+    // Per-entry recovery differs too: move/screen/pass/position entries
+    // record an error and move on (no recover_until), while
+    // parse_defense_block's entries call recover_until on failure.
+    //
+    // The refactor's `parse_braced_block` helper is parameterized
+    // (`recover_on_header_error`, `always_parse_body`) precisely to
+    // preserve these three clusters rather than silently harmonizing them.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_recovery_move_missing_equals() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { move { p1 -> (1,1) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // Cluster A: header failure short-circuits the entry loop entirely,
+        // and leftover tokens (`{ p1 -> (1,1) } }`) cascade into further
+        // "expected action property" / "expected section start" errors.
+        assert_eq!(errors.len(), 4, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `=`"))
+        );
+        assert_eq!(playbook.actions[0].moves.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_move_missing_lbrace() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { move = p1 -> (1,1) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 4, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.actions[0].moves.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_move_malformed_entry_mid_block() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { move = { p1 -> (1,1), ^^^, p2 -> (2,2) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // No recover_until on entry failure: each bad `^` char is its own
+        // Error token / its own failed `expect_identifier`, producing one
+        // error apiece, but both well-formed entries around it still parse.
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].moves.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_move_trailing_comma() {
+        let input = "players = { p1 }\nstate = { position = { p1 = (0,0) } }\naction = { move = { p1 -> (1,1), } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].moves.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_move_unexpected_eof() {
+        let input = "players = { p1 }\nstate = { position = { p1 = (0,0) } }\naction = { move = { p1 -> (1,1)";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // One "Expected `}`, found EOF" from the move block's own closing
+        // brace, and a second from the enclosing action block's.
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert!(errors.iter().all(
+            |e| matches!(e, ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `}`"))
+        ));
+        assert_eq!(playbook.actions[0].moves.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_screen_missing_equals() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { screen { p1 -> p2 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `=`"))
+        );
+        assert_eq!(playbook.actions[0].screens.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_screen_missing_lbrace() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { screen = p1 -> p2 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.actions[0].screens.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_screen_malformed_entry_mid_block() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { screen = { p1 -> p2, ^^^, p2 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].screens.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_screen_trailing_comma() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { screen = { p1 -> p2, } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].screens.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_screen_unexpected_eof() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), p2 = (1,1) } }\naction = { screen = { p1 -> p2";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].screens.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_pass_missing_equals() {
+        let input = "players = { p1, p2 }\nstate = { baller = p1, position = { p1 = (0,0), p2 = (1,1) } }\naction = { pass { p1 -> p2 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `=`"))
+        );
+        assert_eq!(playbook.actions[0].passes.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_pass_missing_lbrace() {
+        let input = "players = { p1, p2 }\nstate = { baller = p1, position = { p1 = (0,0), p2 = (1,1) } }\naction = { pass = p1 -> p2 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.actions[0].passes.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_pass_malformed_entry_mid_block() {
+        let input = "players = { p1, p2 }\nstate = { baller = p1, position = { p1 = (0,0), p2 = (1,1) } }\naction = { pass = { p1 -> p2, ^^^, p2 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].passes.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_pass_trailing_comma() {
+        let input = "players = { p1, p2 }\nstate = { baller = p1, position = { p1 = (0,0), p2 = (1,1) } }\naction = { pass = { p1 -> p2, } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].passes.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_pass_unexpected_eof() {
+        let input = "players = { p1, p2 }\nstate = { baller = p1, position = { p1 = (0,0), p2 = (1,1) } }\naction = { pass = { p1 -> p2";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].passes.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_position_missing_equals() {
+        let input = "players = { p1 }\nstate = { position { p1 = (0,0) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // Cluster B: header failure calls recover_until AND short-circuits
+        // the entry loop (unlike A, but same short-circuiting), so no
+        // positions are parsed and leftover tokens still cascade.
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `=`"))
+        );
+        assert_eq!(playbook.state.positions.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_position_missing_lbrace() {
+        let input = "players = { p1 }\nstate = { position = p1 = (0,0) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.state.positions.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_position_malformed_entry_mid_block() {
+        let input = "players = { p1, p2 }\nstate = { position = { p1 = (0,0), ^^^, p2 = (1,1) } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+        assert_eq!(playbook.state.positions.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_position_trailing_comma() {
+        let input = "players = { p1 }\nstate = { position = { p1 = (0,0), } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.state.positions.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_position_unexpected_eof() {
+        let input = "players = { p1 }\nstate = { position = { p1 = (0,0)";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.state.positions.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_state_defense_missing_equals() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) }, defense { d1 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // Cluster C (parse_defense_block): unlike A/B, a header failure does
+        // NOT short-circuit -- `{` is still attempted (and also fails here,
+        // since recover_until left us at `}`), each recovering via
+        // recover_until, and no cascade beyond the block itself.
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `=`"))
+        );
+        assert!(
+            matches!(&errors[1], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.state.defense.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_state_defense_missing_lbrace() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) }, defense = d1 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+        assert!(
+            matches!(&errors[0], ParseError::UnexpectedToken(_, msg) if msg.contains("Expected `{`"))
+        );
+        assert_eq!(playbook.state.defense.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_state_defense_malformed_entry_mid_block() {
+        let input = "players = { p1 }\ndefenders = { d1, d2 }\nstate = { position = { p1 = (0,0) }, defense = { d1 -> p1, ^^^, d2 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        // Unlike A/B, per-entry failure DOES call recover_until, so only a
+        // single error is recorded for the whole run of bad `^` tokens.
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+        assert_eq!(playbook.state.defense.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_state_defense_trailing_comma() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) }, defense = { d1 -> p1, } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.state.defense.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_state_defense_unexpected_eof() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) }, defense = { d1 -> p1";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.state.defense.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_action_defense_missing_equals() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) } }\naction = { defense { d1 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].defenses.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_action_defense_missing_lbrace() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) } }\naction = { defense = d1 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].defenses.len(), 0);
+    }
+
+    #[test]
+    fn test_recovery_action_defense_malformed_entry_mid_block() {
+        let input = "players = { p1 }\ndefenders = { d1, d2 }\nstate = { position = { p1 = (0,0) } }\naction = { defense = { d1 -> p1, ^^^, d2 -> p1 } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].defenses.len(), 2);
+    }
+
+    #[test]
+    fn test_recovery_action_defense_trailing_comma() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) } }\naction = { defense = { d1 -> p1, } }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].defenses.len(), 1);
+    }
+
+    #[test]
+    fn test_recovery_action_defense_unexpected_eof() {
+        let input = "players = { p1 }\ndefenders = { d1 }\nstate = { position = { p1 = (0,0) } }\naction = { defense = { d1 -> p1";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let (playbook, errors) = parser.parse();
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+        assert_eq!(playbook.actions[0].defenses.len(), 1);
     }
 }
