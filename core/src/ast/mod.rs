@@ -9,17 +9,27 @@ pub struct Playbook {
     pub actions: Vec<Action>,
     pub comments: Vec<(Span, String)>,
     pub section_spans: SectionSpans,
+    pub action_sections: Vec<ActionSection>,
 }
 
 /// Where each top-level section keyword first appears, so tools such as the
-/// formatter can keep comments next to the section they precede. `actions`
-/// covers both the `action = { ... }` and `actions = [ ... ]` forms.
+/// formatter can keep comments next to the section they precede. Action
+/// sections are tracked individually by [`ActionSection`].
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub struct SectionSpans {
     pub players: Option<Span>,
     pub defenders: Option<Span>,
     pub state: Option<Span>,
-    pub actions: Option<Span>,
+}
+
+/// One top-level `action = { ... }` (`list: false`) or `actions = [ ... ]`
+/// (`list: true`) section, in source order, holding `Playbook::actions[range]`,
+/// so the formatter can write each section back in its original form.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ActionSection {
+    pub span: Span,
+    pub list: bool,
+    pub range: std::ops::Range<usize>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]

@@ -341,6 +341,7 @@ impl Parser {
         let mut state = State::default();
         let mut actions = Vec::new();
         let mut section_spans = SectionSpans::default();
+        let mut action_sections = Vec::new();
 
         while self.peek().kind != TokenKind::EOF {
             let span = self.peek_span();
@@ -357,13 +358,19 @@ impl Parser {
                     section_spans.state.get_or_insert(span);
                     self.parse_state_section(&mut state);
                 }
-                TokenKind::Action => {
-                    section_spans.actions.get_or_insert(span);
-                    self.parse_phase(&mut actions);
-                }
-                TokenKind::Actions => {
-                    section_spans.actions.get_or_insert(span);
-                    self.parse_actions_section(&mut actions);
+                kind @ (TokenKind::Action | TokenKind::Actions) => {
+                    let list = kind == TokenKind::Actions;
+                    let start = actions.len();
+                    if list {
+                        self.parse_actions_section(&mut actions);
+                    } else {
+                        self.parse_phase(&mut actions);
+                    }
+                    action_sections.push(ActionSection {
+                        span,
+                        list,
+                        range: start..actions.len(),
+                    });
                 }
                 TokenKind::Error(msg) => {
                     let token = self.advance();
@@ -392,6 +399,10 @@ impl Parser {
         }
 
         actions.truncate(MAX_PHASES);
+        for section in &mut action_sections {
+            section.range.start = section.range.start.min(MAX_PHASES);
+            section.range.end = section.range.end.min(MAX_PHASES);
+        }
 
         let mut colliding_ids: Vec<&String> =
             players.iter().filter(|p| defenders.contains(p)).collect();
@@ -419,6 +430,7 @@ impl Parser {
                 actions,
                 comments: self.comments.clone(),
                 section_spans,
+                action_sections,
             },
             self.errors.clone(),
         )

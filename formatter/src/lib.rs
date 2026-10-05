@@ -1,6 +1,6 @@
 use playbook_lang_core::ast::{
-    Action, CurveDirection, DefenseAction, DefenseTarget, MoveAction, PassAction, PathType,
-    Playbook, ScreenAction, ScreenTarget, State, Timing,
+    Action, ActionSection, CurveDirection, DefenseAction, DefenseTarget, MoveAction, PassAction,
+    PathType, Playbook, ScreenAction, ScreenTarget, State, Timing,
 };
 use playbook_lang_core::lexer::{Lexer, Span};
 use playbook_lang_core::parser::{ParseError, Parser};
@@ -78,7 +78,7 @@ impl Formatter {
         self.format_identifier_list("players", spans.players, &playbook.players);
         self.format_identifier_list("defenders", spans.defenders, &playbook.defenders);
         self.format_state(spans.state, &playbook.state);
-        self.format_actions(spans.actions, &playbook.actions);
+        self.format_actions(&playbook.action_sections, &playbook.actions);
 
         self.write_comments_at(TRAILING);
         std::mem::take(&mut self.output)
@@ -184,39 +184,57 @@ impl Formatter {
         self.push_str("}\n\n");
     }
 
-    fn format_actions(&mut self, span: Option<Span>, actions: &[Action]) {
-        if actions.is_empty() {
-            return;
-        }
-
-        self.write_leading_comments(span);
-        if actions.len() == 1 {
-            self.push_str("action = {\n");
-            self.indent_level += 1;
-            self.format_action_block(&actions[0]);
-            self.indent_level -= 1;
-            self.push_str("}\n");
+    /// Writes each `action` / `actions` section back in its original form,
+    /// rather than merging them, which could change their meaning.
+    fn format_actions(&mut self, sections: &[ActionSection], actions: &[Action]) {
+        // A hand-built `Playbook` may carry actions without sections.
+        let fallback;
+        let sections = if sections.is_empty() && !actions.is_empty() {
+            fallback = [ActionSection {
+                span: actions[0].span,
+                list: actions.len() > 1,
+                range: 0..actions.len(),
+            }];
+            &fallback[..]
         } else {
-            self.push_str("actions = [\n");
-            self.indent_level += 1;
-            let len = actions.len();
-            for (i, action) in actions.iter().enumerate() {
-                self.write_leading_comments(action.span);
-                self.push_str(&self.indent());
-                self.push_str("action = {\n");
-                self.indent_level += 1;
-                self.format_action_block(action);
-                self.indent_level -= 1;
-                self.push_str(&self.indent());
-                self.push_str("}");
-                if i < len - 1 {
-                    self.push_str(",");
-                }
+            sections
+        };
+
+        for (i, section) in sections.iter().enumerate() {
+            let phases = &actions[section.range.clone()];
+            if i > 0 {
                 self.newline();
             }
-            self.indent_level -= 1;
-            self.push_str("]\n");
+            self.write_leading_comments(section.span);
+            if section.list {
+                self.push_str("actions = [\n");
+                self.indent_level += 1;
+                for (j, action) in phases.iter().enumerate() {
+                    self.write_leading_comments(action.span);
+                    self.format_phase(action);
+                    if j < phases.len() - 1 {
+                        self.push_str(",");
+                    }
+                    self.newline();
+                }
+                self.indent_level -= 1;
+                self.push_str("]\n");
+            } else {
+                self.format_phase(&phases[0]);
+                self.newline();
+            }
         }
+    }
+
+    /// Writes one `action = { ... }`, without a trailing newline.
+    fn format_phase(&mut self, action: &Action) {
+        self.push_str(&self.indent());
+        self.push_str("action = {\n");
+        self.indent_level += 1;
+        self.format_action_block(action);
+        self.indent_level -= 1;
+        self.push_str(&self.indent());
+        self.push_str("}");
     }
 
     fn format_action_block(&mut self, action: &Action) {
@@ -603,6 +621,57 @@ action = {
 // end
 "#;
         assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_keeps_action_sections_separate() {
+        // Regression for #87: separate `action` sections used to be merged
+        // into one `actions = [...]` list.
+        let input = "action={move={p1->(1,1)}}\n// second\naction={move={p1->(2,2)}}";
+        let expected = r#"state = {
+}
+
+action = {
+  move = {
+    p1 -> (1, 1),
+  },
+}
+
+// second
+action = {
+  move = {
+    p1 -> (2, 2),
+  },
+}
+"#;
+        let formatted = format(input);
+        assert_eq!(formatted, expected);
+        assert_eq!(format(&formatted), formatted);
+    }
+
+    #[test]
+    fn test_format_keeps_mixed_action_sections() {
+        let input = "actions=[action={move={p1->(1,1)}}]action={pass={p1->p2}}";
+        let expected = r#"state = {
+}
+
+actions = [
+  action = {
+    move = {
+      p1 -> (1, 1),
+    },
+  }
+]
+
+action = {
+  pass = {
+    p1 -> p2,
+  },
+}
+"#;
+        let formatted = format(input);
+        assert_eq!(formatted, expected);
+        assert!(format_checked(&formatted).is_ok());
     }
 
     #[test]
