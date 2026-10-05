@@ -3,7 +3,8 @@ use playbook_lang_core::Renderer;
 use playbook_lang_formatter::format_checked;
 use playbook_lang_linter::lint;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 #[derive(Parser)]
 #[command(author, version, about = "Playbook Language CLI Tool", long_about = None)]
@@ -40,66 +41,59 @@ enum Commands {
     },
 }
 
-fn main() {
-    let args = Args::parse();
+fn main() -> ExitCode {
+    match run(Args::parse().command) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    match args.command {
+fn read_input(path: &Path) -> Result<String, String> {
+    fs::read_to_string(path)
+        .map_err(|e| format!("{}: failed to read input file: {}", path.display(), e))
+}
+
+fn run(command: Commands) -> Result<(), String> {
+    match command {
         Commands::Render { input, output } => {
-            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
-            let renderer = Renderer::new();
-            let result = renderer.render(&input_content);
-
-            match result {
-                Ok(svg) => {
-                    let output_path = output.unwrap_or_else(|| {
-                        let mut path = input.clone();
-                        path.set_extension("svg");
-                        path
-                    });
-
-                    fs::write(&output_path, svg).expect("Failed to write output file");
-                    println!("Successfully converted {:?} to {:?}", input, output_path);
-                }
-                Err(e) => {
-                    eprintln!("Compile Error:\n{}", e);
-                    std::process::exit(1);
-                }
-            }
+            let svg = Renderer::new()
+                .render(&read_input(&input)?)
+                .map_err(|e| format!("Compile Error:\n{}", e))?;
+            let output_path = output.unwrap_or_else(|| input.with_extension("svg"));
+            fs::write(&output_path, svg).map_err(|e| {
+                format!(
+                    "{}: failed to write output file: {}",
+                    output_path.display(),
+                    e
+                )
+            })?;
+            println!("Successfully converted {:?} to {:?}", input, output_path);
         }
         Commands::Fmt { input } => {
-            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
-            match format_checked(&input_content) {
-                Ok(formatted) => print!("{}", formatted),
-                Err(errors) => {
-                    for e in &errors {
-                        eprintln!("{}: parse error: {}", input.display(), e);
-                    }
-                    std::process::exit(1);
-                }
-            }
+            let formatted = format_checked(&read_input(&input)?).map_err(|errors| {
+                errors
+                    .iter()
+                    .map(|e| format!("{}: parse error: {}", input.display(), e))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })?;
+            print!("{}", formatted);
         }
         Commands::Lint { input } => {
-            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
-            let linter_outputs = lint(&input_content);
-            for output in linter_outputs.iter() {
+            for output in &lint(&read_input(&input)?) {
                 println!("lint error [{}]: {}", output.severity, output.message);
                 println!("line: {}, column: {}", output.line, output.column);
             }
         }
         Commands::Play { input } => {
-            let input_content = fs::read_to_string(&input).expect("Failed to read input file");
-            let renderer = Renderer::new();
-            let result = renderer.play(&input_content);
-
-            match result {
-                Ok(json) => {
-                    println!("{}", json);
-                }
-                Err(e) => {
-                    eprintln!("Compile Error:\n{}", e);
-                    std::process::exit(1);
-                }
-            }
+            let json = Renderer::new()
+                .play(&read_input(&input)?)
+                .map_err(|e| format!("Compile Error:\n{}", e))?;
+            println!("{}", json);
         }
     }
+    Ok(())
 }
