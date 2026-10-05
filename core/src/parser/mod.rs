@@ -102,11 +102,24 @@ fn get_suggestion(input: &str, candidates: &[&str]) -> Option<String> {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
+        // Comments may appear anywhere, so strip them up front instead of
+        // teaching every parse loop to skip them.
+        let mut comments = Vec::new();
+        let tokens = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokenKind::Comment(s) => {
+                    comments.push((token.span, s));
+                    None
+                }
+                _ => Some(token),
+            })
+            .collect();
         Self {
             tokens,
             pos: 0,
             errors: Vec::new(),
-            comments: Vec::new(),
+            comments,
         }
     }
 
@@ -342,10 +355,6 @@ impl Parser {
 
         while self.peek().kind != TokenKind::EOF {
             match self.peek().kind {
-                TokenKind::Comment(ref s) => {
-                    let token = self.advance();
-                    self.comments.push((token.span, s.clone()));
-                }
                 TokenKind::Players => {
                     self.parse_identifier_list_section(&mut players);
                 }
@@ -482,12 +491,6 @@ impl Parser {
         }
 
         while self.peek().kind != TokenKind::RBracket && self.peek().kind != TokenKind::EOF {
-            if let TokenKind::Comment(ref s) = self.peek().kind {
-                let token = self.advance();
-                self.comments.push((token.span, s.clone()));
-                continue;
-            }
-
             if let Err(e) = self.expect(TokenKind::Action) {
                 self.error(e);
                 self.recover_until(&[TokenKind::Comma, TokenKind::RBracket]);
@@ -914,6 +917,23 @@ mod tests {
         let (playbook, errors) = parser.parse();
         assert!(errors.is_empty());
         assert_eq!(playbook.players, vec!["p1", "p2"]);
+    }
+
+    #[test]
+    fn test_parse_comments_inside_blocks() {
+        // Regression for #84: `//` comments inside blocks used to break parsing.
+        let input = include_str!("../../../fixtures/comment.playbook");
+        let tokens = Lexer::new(input).tokenize();
+        let (playbook, errors) = Parser::new(tokens).parse();
+        assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+        assert_eq!(playbook.players, vec!["p1", "p2"]);
+        assert_eq!(playbook.state.baller.as_deref(), Some("p1"));
+        assert_eq!(playbook.actions.len(), 1);
+        let comments: Vec<_> = playbook.comments.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(
+            comments,
+            vec!["Global comment", "who has the ball", "move to right"]
+        );
     }
 
     #[test]
