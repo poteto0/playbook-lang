@@ -106,7 +106,12 @@ impl IRGenerator {
         let mut entities = Vec::new();
         let mut interactions = Vec::new();
 
-        let initial_positions = playbook.state.positions.clone();
+        let initial_positions: HashMap<_, _> = playbook
+            .state
+            .positions
+            .iter()
+            .map(|(id, (pos, _))| (id.clone(), *pos))
+            .collect();
         let mut current_positions = initial_positions.clone();
         let mut current_baller = playbook.state.baller.clone();
 
@@ -319,8 +324,8 @@ mod tests {
     #[test]
     fn test_ir_generation() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 0.0));
-        positions.insert("p2".to_string(), (10.0, 10.0));
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+        positions.insert("p2".to_string(), ((10.0, 10.0), dummy_span()));
 
         let playbook = Playbook {
             players: vec!["p1".to_string(), "p2".to_string()],
@@ -345,7 +350,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -362,8 +367,8 @@ mod tests {
     #[test]
     fn test_pass_without_ball() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 0.0));
-        positions.insert("p2".to_string(), (10.0, 10.0));
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+        positions.insert("p2".to_string(), ((10.0, 10.0), dummy_span()));
 
         let playbook = Playbook {
             players: vec!["p1".to_string(), "p2".to_string()],
@@ -382,7 +387,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let result = IRGenerator::generate(playbook);
@@ -396,7 +401,7 @@ mod tests {
     #[test]
     fn test_undefined_player_error() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 0.0));
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
 
         let playbook = Playbook {
             players: vec!["p1".to_string()],
@@ -415,7 +420,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let result = IRGenerator::generate(playbook);
@@ -429,10 +434,10 @@ mod tests {
     #[test]
     fn test_label_strips_only_leading_p() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 0.0));
-        positions.insert("player3".to_string(), (1.0, 1.0));
-        positions.insert("pp7".to_string(), (2.0, 2.0));
-        positions.insert("top".to_string(), (3.0, 3.0));
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+        positions.insert("player3".to_string(), ((1.0, 1.0), dummy_span()));
+        positions.insert("pp7".to_string(), ((2.0, 2.0), dummy_span()));
+        positions.insert("top".to_string(), ((3.0, 3.0), dummy_span()));
 
         let playbook = Playbook {
             players: vec![
@@ -448,7 +453,7 @@ mod tests {
                 ..Default::default()
             },
             actions: vec![],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -472,7 +477,7 @@ mod tests {
     #[test]
     fn test_defender_initial_position_and_mark() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 60.0));
+        positions.insert("p1".to_string(), ((0.0, 60.0), dummy_span()));
 
         let mut defense = HashMap::new();
         defense.insert(
@@ -498,9 +503,10 @@ mod tests {
                 baller: None,
                 positions,
                 defense,
+                ..Default::default()
             },
             actions: vec![],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -521,7 +527,7 @@ mod tests {
     #[test]
     fn test_defender_tracks_player_after_move() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 60.0));
+        positions.insert("p1".to_string(), ((0.0, 60.0), dummy_span()));
 
         let playbook = Playbook {
             players: vec!["p1".to_string()],
@@ -530,6 +536,7 @@ mod tests {
                 baller: None,
                 positions,
                 defense: HashMap::new(),
+                ..Default::default()
             },
             actions: vec![Action {
                 moves: vec![MoveAction {
@@ -549,7 +556,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -576,7 +583,7 @@ mod tests {
     #[test]
     fn test_defender_mark_timing_tracks_start_middle_and_end() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 40.0));
+        positions.insert("p1".to_string(), ((0.0, 40.0), dummy_span()));
 
         // p1 moves from (0, 40) to (0, 80) in this phase. A defender marking
         // p1 with `:before` tracks the start, `:after` the end, and `:middle`
@@ -612,7 +619,7 @@ mod tests {
                 ],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
@@ -640,7 +647,7 @@ mod tests {
                 }],
                 ..Default::default()
             }],
-            comments: vec![],
+            ..Default::default()
         };
 
         let result = IRGenerator::generate(playbook);
@@ -674,7 +681,7 @@ mod tests {
                 ..Default::default()
             },
             actions: vec![],
-            comments: vec![],
+            ..Default::default()
         };
 
         // A state.defense Mark referencing an unknown player must error the
@@ -691,7 +698,7 @@ mod tests {
     #[test]
     fn test_defense_mark_offset_clamped_to_not_overshoot_center() {
         let mut positions = HashMap::new();
-        positions.insert("p1".to_string(), (0.0, 5.0));
+        positions.insert("p1".to_string(), ((0.0, 5.0), dummy_span()));
 
         let mut defense = HashMap::new();
         defense.insert(
@@ -715,7 +722,7 @@ mod tests {
                 ..Default::default()
             },
             actions: vec![],
-            comments: vec![],
+            ..Default::default()
         };
 
         let scene = IRGenerator::generate(playbook).unwrap();
