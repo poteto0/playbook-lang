@@ -493,14 +493,14 @@ impl Parser {
     }
 
     /// Parses one `action = {...}` and appends it. The limit is checked here
-    /// so it covers every `action` / `actions` section; the error is
+    /// so it counts phases across the whole playbook; the error is
     /// reported once, on the first phase over `MAX_PHASES`, and `parse`
     /// drops the excess phases afterwards.
     fn parse_phase(&mut self, actions: &mut Vec<Action>) {
         if actions.len() == MAX_PHASES {
             self.error(ParseError::InvalidSyntax(
                 self.peek(),
-                format!("Maximum of {MAX_PHASES} actions allowed"),
+                format!("Maximum of {MAX_PHASES} actions allowed per playbook"),
             ));
         }
         actions.push(self.parse_single_action_section());
@@ -1191,10 +1191,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_error_too_many_top_level_actions() {
-        // Arrange: the limit also applies to `action = {}` sections, alone
-        // or mixed with an `actions = [...]` section.
-        let input = r#"
+    fn test_parse_error_phase_limit_counts_whole_playbook() {
+        // Arrange: the limit counts every phase in the playbook, across
+        // `action = {}` and `actions = [...]` sections in either order.
+        let cases = [
+            (
+                r#"
         players = { p1 }
         state = { position = { p1 = (0, 0) } }
         actions = [
@@ -1203,18 +1205,37 @@ mod tests {
         ]
         action = { move = { p1 -> (5, 5) } }
         action = { move = { p1 -> (0, 0) } }
-        "#;
-        let mut lexer = Lexer::new(input);
-        let tokens = lexer.tokenize();
-        let mut parser = Parser::new(tokens);
+        "#,
+                (5.0, 5.0),
+            ),
+            (
+                r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        action = { move = { p1 -> (5, 5) } }
+        actions = [
+            action = { move = { p1 -> (10, 0) } },
+            action = { move = { p1 -> (10, 10) } },
+            action = { move = { p1 -> (0, 0) } }
+        ]
+        "#,
+                (10.0, 10.0),
+            ),
+        ];
 
-        // Act
-        let (playbook, errors) = parser.parse();
+        for (input, last_target) in cases {
+            let mut lexer = Lexer::new(input);
+            let tokens = lexer.tokenize();
+            let mut parser = Parser::new(tokens);
 
-        // Assert
-        assert_eq!(count_max_phase_errors(&errors), 1);
-        assert_eq!(playbook.actions.len(), 3);
-        assert_eq!(playbook.actions[2].moves[0].target, (5.0, 5.0));
+            // Act
+            let (playbook, errors) = parser.parse();
+
+            // Assert
+            assert_eq!(count_max_phase_errors(&errors), 1);
+            assert_eq!(playbook.actions.len(), 3);
+            assert_eq!(playbook.actions[2].moves[0].target, last_target);
+        }
     }
 
     fn count_max_phase_errors(errors: &[ParseError]) -> usize {
