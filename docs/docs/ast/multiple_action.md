@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Multiple Action
 
-You can define sequential actions using the `actions` array. Up to 3 actions are supported.
+You can define sequential actions using the `actions` array. Up to 3 actions are supported per playbook, counted across all `action` and `actions` sections.
 Each action creates a new "phase". Timing indicators like `:before` or `:after` refer to the state at the beginning or end of that specific phase.
 
 ```playbook
