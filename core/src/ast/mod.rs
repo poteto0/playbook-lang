@@ -1,20 +1,35 @@
 use crate::lexer::Span;
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct Playbook {
     pub players: Vec<String>,
     pub defenders: Vec<String>,
     pub state: State,
     pub actions: Vec<Action>,
     pub comments: Vec<(Span, String)>,
+    pub section_spans: SectionSpans,
+}
+
+/// Where each top-level section keyword first appears, so tools such as the
+/// formatter can keep comments next to the section they precede. `actions`
+/// covers both the `action = { ... }` and `actions = [ ... ]` forms.
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
+pub struct SectionSpans {
+    pub players: Option<Span>,
+    pub defenders: Option<Span>,
+    pub state: Option<Span>,
+    pub actions: Option<Span>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct State {
     pub baller: Option<String>,
-    pub positions: HashMap<String, (f64, f64)>,
+    pub positions: HashMap<String, ((f64, f64), Span)>,
     pub defense: HashMap<String, (DefenseTarget, Span)>,
+    pub baller_span: Option<Span>,
+    pub position_span: Option<Span>,
+    pub defense_span: Option<Span>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -23,6 +38,8 @@ pub struct Action {
     pub screens: Vec<ScreenAction>,
     pub passes: Vec<PassAction>,
     pub defenses: Vec<DefenseAction>,
+    /// Span of the `action` keyword that opens this action.
+    pub span: Span,
 }
 
 /// Where a defender is assigned to: a fixed court coordinate, or marking

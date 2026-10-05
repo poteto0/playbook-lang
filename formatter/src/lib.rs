@@ -4,7 +4,7 @@ use playbook_lang_core::ast::{
 };
 use playbook_lang_core::lexer::{Lexer, Span};
 use playbook_lang_core::parser::{ParseError, Parser};
-use std::collections::VecDeque;
+use std::collections::HashMap;
 
 use wasm_bindgen::prelude::*;
 
@@ -25,42 +25,63 @@ pub fn format_checked(input: &str) -> Result<String, Vec<ParseError>> {
         return Err(errors);
     }
 
-    let mut formatter = Formatter::new(playbook);
-    Ok(formatter.format())
+    Ok(Formatter::format_with_comments(&playbook))
 }
 
+/// Pseudo anchor for comments that follow every formatted node; they are
+/// written at the very end of the output.
+const TRAILING: usize = usize::MAX;
+
+#[derive(Default)]
 struct Formatter {
-    playbook: Playbook,
-    comments: VecDeque<(Span, String)>,
+    /// Comments keyed by the start of the node they precede.
+    comments: HashMap<usize, Vec<String>>,
+    /// Starts of every node that can carry leading comments, in visit order.
+    anchors: Vec<usize>,
     output: String,
     indent_level: usize,
 }
 
 impl Formatter {
-    fn new(playbook: Playbook) -> Self {
-        let mut comments: Vec<_> = playbook.comments.clone();
-        comments.sort_by_key(|(span, _)| span.start);
-        Self {
-            playbook,
-            comments: VecDeque::from(comments),
-            output: String::new(),
-            indent_level: 0,
+    /// Attaches each comment to the first node that follows it in the
+    /// source, so comments move together with their node however the output
+    /// reorders sections and entries. The anchors are taken from a dry run
+    /// of the formatter itself, so they always match what it writes.
+    fn format_with_comments(playbook: &Playbook) -> String {
+        let mut dry_run = Formatter::default();
+        let output = dry_run.format(playbook);
+        if playbook.comments.is_empty() {
+            return output;
         }
+
+        let mut anchors = dry_run.anchors;
+        anchors.sort_unstable();
+        let mut comments: Vec<_> = playbook.comments.iter().collect();
+        comments.sort_by_key(|(span, _)| span.start);
+
+        let mut formatter = Formatter::default();
+        for (span, comment) in comments {
+            let next = anchors.partition_point(|&anchor| anchor <= span.start);
+            let anchor = anchors.get(next).copied().unwrap_or(TRAILING);
+            formatter
+                .comments
+                .entry(anchor)
+                .or_default()
+                .push(comment.clone());
+        }
+        formatter.format(playbook)
     }
 
-    fn format(&mut self) -> String {
-        let players = self.playbook.players.clone();
-        let defenders = self.playbook.defenders.clone();
-        let state = self.playbook.state.clone();
-        let actions = self.playbook.actions.clone();
+    fn format(&mut self, playbook: &Playbook) -> String {
+        let spans = playbook.section_spans;
 
-        self.format_players(players);
-        self.format_defenders(defenders);
-        self.format_state(state);
-        self.format_actions(actions);
+        self.format_identifier_list("players", spans.players, &playbook.players);
+        self.format_identifier_list("defenders", spans.defenders, &playbook.defenders);
+        self.format_state(spans.state, &playbook.state);
+        self.format_actions(spans.actions, &playbook.actions);
 
-        self.flush_comments(usize::MAX);
-        self.output.clone()
+        self.write_comments_at(TRAILING);
+        std::mem::take(&mut self.output)
     }
 
     fn indent(&self) -> String {
@@ -75,45 +96,34 @@ impl Formatter {
         self.output.push('\n');
     }
 
-    fn flush_comments(&mut self, before_pos: usize) {
-        while let Some((span, _)) = self.comments.front() {
-            if span.start < before_pos {
-                let (_, comment) = self.comments.pop_front().unwrap();
-                self.push_str(&self.indent());
-                self.push_str("// ");
-                self.push_str(&comment);
-                self.newline();
-            } else {
-                break;
-            }
+    /// Registers `span` as an anchor and writes the comments attached to it;
+    /// a no-op when the node was absent from the source (`None`).
+    fn write_leading_comments(&mut self, span: impl Into<Option<Span>>) {
+        if let Some(span) = span.into() {
+            self.write_comments_at(span.start);
         }
     }
 
-    fn format_players(&mut self, players: Vec<String>) {
-        if players.is_empty() {
-            return;
+    fn write_comments_at(&mut self, anchor: usize) {
+        self.anchors.push(anchor);
+        for comment in self.comments.remove(&anchor).unwrap_or_default() {
+            self.push_str(&self.indent());
+            self.push_str("// ");
+            self.push_str(&comment);
+            self.newline();
         }
-
-        if let Some((span, _)) = self.comments.front() {
-            self.flush_comments(span.start + 1);
-        }
-
-        self.push_str("players = { ");
-        self.push_str(&players.join(", "));
-        self.push_str(" }\n\n");
     }
 
-    fn format_defenders(&mut self, defenders: Vec<String>) {
-        if defenders.is_empty() {
+    /// Formats a `players` / `defenders` section.
+    fn format_identifier_list(&mut self, keyword: &str, span: Option<Span>, ids: &[String]) {
+        if ids.is_empty() {
             return;
         }
 
-        if let Some((span, _)) = self.comments.front() {
-            self.flush_comments(span.start + 1);
-        }
-
-        self.push_str("defenders = { ");
-        self.push_str(&defenders.join(", "));
+        self.write_leading_comments(span);
+        self.push_str(keyword);
+        self.push_str(" = { ");
+        self.push_str(&ids.join(", "));
         self.push_str(" }\n\n");
     }
 
@@ -131,65 +141,55 @@ impl Formatter {
         }
     }
 
-    fn format_state(&mut self, state: State) {
+    fn format_state(&mut self, span: Option<Span>, state: &State) {
+        self.write_leading_comments(span);
         self.push_str("state = {\n");
         self.indent_level += 1;
 
         if let Some(ref baller) = state.baller {
+            self.write_leading_comments(state.baller_span);
             self.push_str(&self.indent());
             self.push_str("baller = ");
             self.push_str(baller);
             self.push_str(",\n");
         }
 
-        if !state.positions.is_empty() {
-            self.push_str(&self.indent());
-            self.push_str("position = {\n");
-            self.indent_level += 1;
-
-            let mut sorted_players: Vec<_> = state.positions.keys().collect();
-            sorted_players.sort();
-            for player in sorted_players {
-                let (x, y) = state.positions.get(player).unwrap();
-                self.push_str(&self.indent());
-                self.push_str(&format!("{} = ({}, {}),\n", player, x, y));
-            }
-
-            self.indent_level -= 1;
-            self.push_str(&self.indent());
-            self.push_str("},\n");
+        let mut positions: Vec<_> = state.positions.iter().collect();
+        positions.sort_by_key(|(player, _)| *player);
+        if !positions.is_empty() {
+            self.write_leading_comments(state.position_span);
         }
+        self.format_block("position", &positions, |this, (player, ((x, y), span))| {
+            this.write_leading_comments(*span);
+            this.push_str(&this.indent());
+            this.push_str(&format!("{} = ({}, {}),\n", player, x, y));
+        });
 
-        if !state.defense.is_empty() {
-            self.push_str(&self.indent());
-            self.push_str("defense = {\n");
-            self.indent_level += 1;
-
-            let mut sorted_defenders: Vec<_> = state.defense.keys().collect();
-            sorted_defenders.sort();
-            for defender in sorted_defenders {
-                let (target, _) = state.defense.get(defender).unwrap();
-                self.push_str(&self.indent());
-                self.push_str(defender);
-                self.push_str(" ");
-                self.push_str(&self.format_defense_target(target, "="));
-                self.push_str(",\n");
-            }
-
-            self.indent_level -= 1;
-            self.push_str(&self.indent());
-            self.push_str("},\n");
+        let mut defense: Vec<_> = state.defense.iter().collect();
+        defense.sort_by_key(|(defender, _)| *defender);
+        if !defense.is_empty() {
+            self.write_leading_comments(state.defense_span);
         }
+        self.format_block("defense", &defense, |this, (defender, (target, span))| {
+            this.write_leading_comments(*span);
+            this.push_str(&this.indent());
+            this.push_str(defender);
+            this.push_str(" ");
+            let target_str = this.format_defense_target(target, "=");
+            this.push_str(&target_str);
+            this.push_str(",\n");
+        });
 
         self.indent_level -= 1;
         self.push_str("}\n\n");
     }
 
-    fn format_actions(&mut self, actions: Vec<Action>) {
+    fn format_actions(&mut self, span: Option<Span>, actions: &[Action]) {
         if actions.is_empty() {
             return;
         }
 
+        self.write_leading_comments(span);
         if actions.len() == 1 {
             self.push_str("action = {\n");
             self.indent_level += 1;
@@ -201,6 +201,7 @@ impl Formatter {
             self.indent_level += 1;
             let len = actions.len();
             for (i, action) in actions.iter().enumerate() {
+                self.write_leading_comments(action.span);
                 self.push_str(&self.indent());
                 self.push_str("action = {\n");
                 self.indent_level += 1;
@@ -225,8 +226,8 @@ impl Formatter {
         self.format_defenses(&action.defenses);
     }
 
-    /// Shared scaffold for an action-block property (`move`, `screen`,
-    /// `pass`, `defense`): an empty check, the `<header> = {` line, one
+    /// Shared scaffold for a braced property block (`move`, `screen`,
+    /// `pass`, `defense`, and `state`'s `position` / `defense`): an empty check, the `<header> = {` line, one
     /// indented line per item (each preceded by any comments that belong
     /// before it and followed by a trailing comma), and the closing `},`.
     /// `format_entry` writes just the entry's own line content (the part
@@ -255,7 +256,7 @@ impl Formatter {
 
     fn format_moves(&mut self, moves: &[MoveAction]) {
         self.format_block("move", moves, |this, m| {
-            this.flush_comments(m.span.start);
+            this.write_leading_comments(m.span);
             this.push_str(&this.indent());
             this.push_str(&m.player);
             this.push_str(" ");
@@ -267,7 +268,7 @@ impl Formatter {
 
     fn format_screens(&mut self, screens: &[ScreenAction]) {
         self.format_block("screen", screens, |this, s| {
-            this.flush_comments(s.span.start);
+            this.write_leading_comments(s.span);
             this.push_str(&this.indent());
             this.push_str(&s.player);
             this.push_str(" ");
@@ -286,7 +287,7 @@ impl Formatter {
 
     fn format_passes(&mut self, passes: &[PassAction]) {
         self.format_block("pass", passes, |this, p| {
-            this.flush_comments(p.span.start);
+            this.write_leading_comments(p.span);
             this.push_str(&this.indent());
             this.push_str(&p.from);
             this.push_str(" -> ");
@@ -299,7 +300,7 @@ impl Formatter {
 
     fn format_defenses(&mut self, defenses: &[DefenseAction]) {
         self.format_block("defense", defenses, |this, d| {
-            this.flush_comments(d.span.start);
+            this.write_leading_comments(d.span);
             this.push_str(&this.indent());
             this.push_str(&d.defender);
             this.push_str(" ");
@@ -396,9 +397,9 @@ players = { p1 }
 state = {
 }
 
+// Middle
 action = {
   move = {
-    // Middle
     p1 -> (0, 0),
   },
 }
@@ -469,6 +470,137 @@ state = {
   },
 }
 
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_comment_before_action_stays_in_place() {
+        // Regression for #86: a comment right before `action = {` used to be
+        // hoisted above `players`.
+        let input = "players = { p1 }\n// before action\naction = { move = { p1 -> (0,0) } }";
+        let expected = r#"players = { p1 }
+
+state = {
+}
+
+// before action
+action = {
+  move = {
+    p1 -> (0, 0),
+  },
+}
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_state_comments_are_kept() {
+        // Regression for #86: comments inside `state` used to be dropped from
+        // their place (flushed later or hoisted). Entries are sorted by name,
+        // and each comment must move together with its entry.
+        let input = r#"players = { p1, p2 }
+defenders = { d1, d2 }
+// initial setup
+state = {
+  // who has the ball
+  baller = p1,
+  // spacing
+  position = {
+    // wing
+    p2 = (10, 10),
+    // top
+    p1 = (0, 0),
+  },
+  defense = {
+    // zone
+    d2 = (5, 5),
+    // man
+    d1 -> p1,
+  },
+}
+action = { move = { p1 -> (1, 1) } }"#;
+        let expected = r#"players = { p1, p2 }
+
+defenders = { d1, d2 }
+
+// initial setup
+state = {
+  // who has the ball
+  baller = p1,
+  // spacing
+  position = {
+    // top
+    p1 = (0, 0),
+    // wing
+    p2 = (10, 10),
+  },
+  defense = {
+    // man
+    d1 -[20]> p1,
+    // zone
+    d2 = (5, 5),
+  },
+}
+
+action = {
+  move = {
+    p1 -> (1, 1),
+  },
+}
+"#;
+        let formatted = format(input);
+        assert_eq!(formatted, expected);
+        assert_eq!(
+            format(&formatted),
+            formatted,
+            "Formatting should be idempotent"
+        );
+    }
+
+    #[test]
+    fn test_format_comment_before_each_action_in_list() {
+        let input = "// phases\nactions = [\n// first\naction = { move = { p1 -> (0,0) } },\n// second\naction = { pass = { p1 -> p2 } }\n]";
+        let expected = r#"state = {
+}
+
+// phases
+actions = [
+  // first
+  action = {
+    move = {
+      p1 -> (0, 0),
+    },
+  },
+  // second
+  action = {
+    pass = {
+      p1 -> p2,
+    },
+  }
+]
+"#;
+        assert_eq!(format(input), expected);
+    }
+
+    #[test]
+    fn test_format_comments_follow_reordered_action_blocks() {
+        // `pass` is written after `move`, so its comment must move with it.
+        let input = "action = {\n  pass = {\n    // hand off\n    p1 -> p2,\n  },\n  move = {\n    // cut\n    p2 -> (0,0),\n  },\n}\n// end";
+        let expected = r#"state = {
+}
+
+action = {
+  move = {
+    // cut
+    p2 -> (0, 0),
+  },
+  pass = {
+    // hand off
+    p1 -> p2,
+  },
+}
+// end
 "#;
         assert_eq!(format(input), expected);
     }

@@ -129,12 +129,7 @@ impl Parser {
         } else {
             Token {
                 kind: TokenKind::EOF,
-                span: Span {
-                    start: 0,
-                    end: 0,
-                    line: 0,
-                    column: 0,
-                },
+                span: Span::default(),
             }
         }
     }
@@ -143,12 +138,7 @@ impl Parser {
         self.tokens
             .get(self.pos)
             .map(|token| token.span)
-            .unwrap_or(Span {
-                start: 0,
-                end: 0,
-                line: 0,
-                column: 0,
-            })
+            .unwrap_or_default()
     }
 
     fn advance(&mut self) -> Token {
@@ -352,22 +342,29 @@ impl Parser {
         let mut defenders = Vec::new();
         let mut state = State::default();
         let mut actions = Vec::new();
+        let mut section_spans = SectionSpans::default();
 
         while self.peek().kind != TokenKind::EOF {
+            let span = self.peek_span();
             match self.peek().kind {
                 TokenKind::Players => {
+                    section_spans.players.get_or_insert(span);
                     self.parse_identifier_list_section(&mut players);
                 }
                 TokenKind::Defenders => {
+                    section_spans.defenders.get_or_insert(span);
                     self.parse_identifier_list_section(&mut defenders);
                 }
                 TokenKind::State => {
+                    section_spans.state.get_or_insert(span);
                     self.parse_state_section(&mut state);
                 }
                 TokenKind::Action => {
+                    section_spans.actions.get_or_insert(span);
                     actions.push(self.parse_single_action_section());
                 }
                 TokenKind::Actions => {
+                    section_spans.actions.get_or_insert(span);
                     self.parse_actions_section(&mut actions);
                 }
                 TokenKind::Error(msg) => {
@@ -421,6 +418,7 @@ impl Parser {
                 state,
                 actions,
                 comments: self.comments.clone(),
+                section_spans,
             },
             self.errors.clone(),
         )
@@ -467,6 +465,7 @@ impl Parser {
     }
 
     fn parse_single_action_section(&mut self) -> Action {
+        let span = self.peek_span();
         self.advance(); // consume 'action'
         if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
             self.error(e);
@@ -478,7 +477,7 @@ impl Parser {
         if let Err(e) = self.expect_and_advance(TokenKind::RBrace) {
             self.error(e);
         }
-        action
+        Action { span, ..action }
     }
 
     fn parse_actions_section(&mut self, actions: &mut Vec<Action>) {
@@ -516,8 +515,10 @@ impl Parser {
 
     fn parse_state_block(&mut self, state: &mut State) {
         while self.peek().kind != TokenKind::RBrace && self.peek().kind != TokenKind::EOF {
+            let span = self.peek_span();
             match self.peek().kind {
                 TokenKind::Baller => {
+                    state.baller_span.get_or_insert(span);
                     self.advance();
                     if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
                         self.error(e);
@@ -531,30 +532,35 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Position => {
+                    state.position_span.get_or_insert(span);
                     self.parse_braced_block(
                         BracedBlockRecovery {
                             recover_on_header_error: true,
                             always_parse_body: false,
                         },
-                        |p| match p.expect_identifier() {
-                            Ok(player) => {
-                                if let Err(e) = p.expect_and_advance(TokenKind::Equals) {
-                                    p.error(e);
-                                } else {
-                                    match p.parse_coordinate() {
-                                        Ok(coord) => {
-                                            state.positions.insert(player, coord);
+                        |p| {
+                            let span = p.peek_span();
+                            match p.expect_identifier() {
+                                Ok(player) => {
+                                    if let Err(e) = p.expect_and_advance(TokenKind::Equals) {
+                                        p.error(e);
+                                    } else {
+                                        match p.parse_coordinate() {
+                                            Ok(coord) => {
+                                                state.positions.insert(player, (coord, span));
+                                            }
+                                            Err(e) => p.error(e),
                                         }
-                                        Err(e) => p.error(e),
                                     }
                                 }
+                                Err(e) => p.error(e),
                             }
-                            Err(e) => p.error(e),
                         },
                     );
                     self.consume_if(TokenKind::Comma);
                 }
                 TokenKind::Defense => {
+                    state.defense_span.get_or_insert(span);
                     for (defender, target, span) in self.parse_defense_block(false) {
                         state.defense.insert(defender, (target, span));
                     }
@@ -1000,8 +1006,14 @@ mod tests {
 
         assert_eq!(playbook.players.len(), 2);
         assert_eq!(playbook.state.baller, Some("p1".to_string()));
-        assert_eq!(playbook.state.positions.get("p1"), Some(&(0.0, 0.0)));
-        assert_eq!(playbook.state.positions.get("p2"), Some(&(10.0, 20.0)));
+        assert_eq!(
+            playbook.state.positions.get("p1").map(|(pos, _)| *pos),
+            Some((0.0, 0.0))
+        );
+        assert_eq!(
+            playbook.state.positions.get("p2").map(|(pos, _)| *pos),
+            Some((10.0, 20.0))
+        );
 
         assert_eq!(playbook.actions.len(), 1);
         assert_eq!(playbook.actions[0].moves.len(), 1);
