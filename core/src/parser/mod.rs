@@ -1,7 +1,5 @@
 use crate::ast::*;
-use crate::constants::{
-    DEFAULT_BEZIER_CURVE_FACTOR, DEFAULT_DEFENSE_OFFSET, MAX_ACTIONS_PER_PHASE,
-};
+use crate::constants::{DEFAULT_BEZIER_CURVE_FACTOR, DEFAULT_DEFENSE_OFFSET, MAX_PHASES};
 use crate::lexer::{Span, Token, TokenKind};
 use std::fmt;
 
@@ -361,7 +359,7 @@ impl Parser {
                 }
                 TokenKind::Action => {
                     section_spans.actions.get_or_insert(span);
-                    actions.push(self.parse_single_action_section());
+                    self.parse_phase(&mut actions);
                 }
                 TokenKind::Actions => {
                     section_spans.actions.get_or_insert(span);
@@ -392,6 +390,8 @@ impl Parser {
                 }
             }
         }
+
+        actions.truncate(MAX_PHASES);
 
         let mut colliding_ids: Vec<&String> =
             players.iter().filter(|p| defenders.contains(p)).collect();
@@ -480,6 +480,20 @@ impl Parser {
         Action { span, ..action }
     }
 
+    /// Parses one `action = {...}` and appends it. The limit is checked here
+    /// so it covers every `action` / `actions` section; the error is
+    /// reported once, on the first phase over `MAX_PHASES`, and `parse`
+    /// drops the excess phases afterwards.
+    fn parse_phase(&mut self, actions: &mut Vec<Action>) {
+        if actions.len() == MAX_PHASES {
+            self.error(ParseError::InvalidSyntax(
+                self.peek(),
+                format!("Maximum of {MAX_PHASES} actions allowed"),
+            ));
+        }
+        actions.push(self.parse_single_action_section());
+    }
+
     fn parse_actions_section(&mut self, actions: &mut Vec<Action>) {
         self.advance(); // consume 'actions'
         if let Err(e) = self.expect_and_advance(TokenKind::Equals) {
@@ -497,14 +511,7 @@ impl Parser {
                 continue;
             }
 
-            if actions.len() >= MAX_ACTIONS_PER_PHASE {
-                self.error(ParseError::InvalidSyntax(
-                    self.peek().clone(),
-                    format!("Maximum of {MAX_ACTIONS_PER_PHASE} actions allowed"),
-                ));
-            }
-
-            actions.push(self.parse_single_action_section());
+            self.parse_phase(actions);
 
             self.consume_if(TokenKind::Comma);
         }
@@ -1155,7 +1162,8 @@ mod tests {
             action = { move = { p1 -> (10, 0) } },
             action = { move = { p1 -> (10, 10) } },
             action = { move = { p2 -> (5, 5) } },
-            action = { move = { p2 -> (0, 0) } }
+            action = { move = { p2 -> (0, 0) } },
+            action = { move = { p1 -> (0, 0) } }
         ]
         "#;
         let mut lexer = Lexer::new(input);
@@ -1163,15 +1171,47 @@ mod tests {
         let mut parser = Parser::new(tokens);
 
         // Act
-        let (_, errors) = parser.parse();
+        let (playbook, errors) = parser.parse();
+
+        // Assert: reported once, and the excess phases are dropped.
+        assert_eq!(count_max_phase_errors(&errors), 1);
+        assert_eq!(playbook.actions.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_error_too_many_top_level_actions() {
+        // Arrange: the limit also applies to `action = {}` sections, alone
+        // or mixed with an `actions = [...]` section.
+        let input = r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        actions = [
+            action = { move = { p1 -> (10, 0) } },
+            action = { move = { p1 -> (10, 10) } }
+        ]
+        action = { move = { p1 -> (5, 5) } }
+        action = { move = { p1 -> (0, 0) } }
+        "#;
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+
+        // Act
+        let (playbook, errors) = parser.parse();
 
         // Assert
-        assert!(!errors.is_empty());
-        let found = errors.iter().any(|e| match e {
-            ParseError::InvalidSyntax(_, msg) => msg.contains("Maximum of 3 actions allowed"),
-            _ => false,
-        });
-        assert!(found);
+        assert_eq!(count_max_phase_errors(&errors), 1);
+        assert_eq!(playbook.actions.len(), 3);
+        assert_eq!(playbook.actions[2].moves[0].target, (5.0, 5.0));
+    }
+
+    fn count_max_phase_errors(errors: &[ParseError]) -> usize {
+        errors
+            .iter()
+            .filter(
+                |e| matches!(e, ParseError::InvalidSyntax(_, msg) if msg.starts_with("Maximum of")),
+            )
+            .count()
     }
 
     #[test]
