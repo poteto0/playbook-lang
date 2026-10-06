@@ -28,6 +28,17 @@ impl fmt::Display for ParseError {
     }
 }
 
+/// Returned by `Parser::peek` once every token has been consumed.
+static EOF_TOKEN: Token = Token {
+    kind: TokenKind::EOF,
+    span: Span {
+        start: 0,
+        end: 0,
+        line: 0,
+        column: 0,
+    },
+};
+
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -121,55 +132,41 @@ impl Parser {
         }
     }
 
-    fn peek(&self) -> Token {
-        if self.pos < self.tokens.len() {
-            self.tokens[self.pos].clone()
-        } else {
-            Token {
-                kind: TokenKind::EOF,
-                span: Span::default(),
-            }
-        }
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.pos).unwrap_or(&EOF_TOKEN)
     }
 
     fn peek_span(&self) -> Span {
-        self.tokens
-            .get(self.pos)
-            .map(|token| token.span)
-            .unwrap_or_default()
+        self.peek().span
     }
 
-    fn advance(&mut self) -> Token {
-        let token = self.peek();
+    fn advance(&mut self) {
         if self.pos < self.tokens.len() {
             self.pos += 1;
         }
-        token
     }
 
     fn error(&mut self, err: ParseError) {
         self.errors.push(err);
     }
 
+    /// Whether the current token is of `kind`'s variant, ignoring any data
+    /// it carries.
+    fn at(&self, kind: &TokenKind) -> bool {
+        std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
+    }
+
     fn recover_until(&mut self, stop_tokens: &[TokenKind]) {
-        while self.peek().kind != TokenKind::EOF {
-            let current = &self.peek().kind;
-            // Check discriminants since TokenKind carries data
-            let found = stop_tokens
-                .iter()
-                .any(|t| std::mem::discriminant(t) == std::mem::discriminant(current));
-            if found {
-                return;
-            }
+        while !self.at(&TokenKind::EOF) && !stop_tokens.iter().any(|t| self.at(t)) {
             self.advance();
         }
     }
 
-    fn expect(&mut self, expected_kind: TokenKind) -> Result<(), ParseError> {
-        let token = self.peek();
-        if std::mem::discriminant(&token.kind) == std::mem::discriminant(&expected_kind) {
+    fn expect(&self, expected_kind: TokenKind) -> Result<(), ParseError> {
+        if self.at(&expected_kind) {
             Ok(())
         } else {
+            let token = self.peek();
             Err(ParseError::UnexpectedToken(
                 token.clone(),
                 format!("Expected `{}`, but found `{}`", expected_kind, token.kind),
@@ -178,36 +175,79 @@ impl Parser {
     }
 
     fn expect_and_advance(&mut self, expected_kind: TokenKind) -> Result<(), ParseError> {
-        let token = self.peek();
-        if std::mem::discriminant(&token.kind) == std::mem::discriminant(&expected_kind) {
-            self.advance();
-            Ok(())
-        } else {
-            Err(ParseError::UnexpectedToken(
-                token.clone(),
-                format!("Expected `{}`, but found `{}`", expected_kind, token.kind),
-            ))
-        }
+        self.expect(expected_kind)?;
+        self.advance();
+        Ok(())
     }
 
+    /// Consumes the current token, which must be an identifier. The token is
+    /// consumed even when it is not one.
     fn expect_identifier(&mut self) -> Result<String, ParseError> {
-        let token = self.advance();
-        match token.clone().kind {
-            TokenKind::Identifier(s) => Ok(s),
+        let token = self.peek();
+        let result = match &token.kind {
+            TokenKind::Identifier(s) => Ok(s.clone()),
             unexpected => Err(ParseError::UnexpectedToken(
-                token,
+                token.clone(),
                 format!("Expected Identifier, but found '{}'", unexpected),
             )),
-        }
+        };
+        self.advance();
+        result
+    }
+
+    /// Consumes the current token, which must be a number (the `axis`
+    /// coordinate). The token is consumed even when it is not one.
+    fn expect_number(&mut self, axis: &str) -> Result<f64, ParseError> {
+        let token = self.peek();
+        let result = match &token.kind {
+            TokenKind::Number(n) => Ok(*n),
+            unexpected => Err(ParseError::UnexpectedToken(
+                token.clone(),
+                format!(
+                    "Expected a numeric value for {}-coordinate, but received '{}'",
+                    axis, unexpected
+                ),
+            )),
+        };
+        self.advance();
+        result
     }
 
     fn consume_if(&mut self, expected_kind: TokenKind) -> bool {
-        if std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(&expected_kind) {
+        if self.at(&expected_kind) {
             self.advance();
             true
         } else {
             false
         }
+    }
+
+    /// Builds the error for a token that is not one of `keywords`, the
+    /// candidates for `expected`. A misspelled identifier gets a "Did you
+    /// mean" suggestion; anything else lists `keywords`, plus the token
+    /// found when `show_found`.
+    fn unexpected_keyword_error(
+        &self,
+        expected: &str,
+        keywords: &[&str],
+        show_found: bool,
+    ) -> ParseError {
+        let token = self.peek();
+        let suggestion = match &token.kind {
+            TokenKind::Identifier(s) => get_suggestion(s, keywords),
+            _ => None,
+        };
+        let msg = match suggestion {
+            Some(sugg) => format!("Expected {}. Did you mean '{}'?", expected, sugg),
+            None => {
+                let mut msg = format!("Expected {} ({})", expected, keywords.join(", "));
+                if show_found {
+                    msg += &format!(", but found '{}'", token.kind);
+                }
+                msg
+            }
+        };
+        ParseError::UnexpectedToken(token.clone(), msg)
     }
 
     /// Parses a `<keyword> = { entry, entry, ... }` brace-delimited block:
@@ -294,7 +334,7 @@ impl Parser {
             }
             _ => {
                 self.error(ParseError::UnexpectedToken(
-                    self.peek(),
+                    self.peek().clone(),
                     "Expected timing".to_string(),
                 ));
                 Timing::None
@@ -304,33 +344,9 @@ impl Parser {
 
     fn parse_coordinate(&mut self) -> Result<(f64, f64), ParseError> {
         self.expect_and_advance(TokenKind::LParenthesis)?;
-        let token = self.advance();
-        let x = match token.clone().kind {
-            TokenKind::Number(n) => n,
-            unexpected => {
-                return Err(ParseError::UnexpectedToken(
-                    token,
-                    format!(
-                        "Expected a numeric value for x-coordinate, but received '{}'",
-                        unexpected
-                    ),
-                ));
-            }
-        };
+        let x = self.expect_number("x")?;
         self.expect_and_advance(TokenKind::Comma)?;
-        let token = self.advance();
-        let y = match token.clone().kind {
-            TokenKind::Number(n) => n,
-            unexpected => {
-                return Err(ParseError::UnexpectedToken(
-                    token,
-                    format!(
-                        "Expected a numeric value for y-coordinate, but received '{}'",
-                        unexpected
-                    ),
-                ));
-            }
-        };
+        let y = self.expect_number("y")?;
         self.expect_and_advance(TokenKind::RParenthesis)?;
         Ok((x, y))
     }
@@ -343,9 +359,9 @@ impl Parser {
         let mut section_spans = SectionSpans::default();
         let mut action_sections = Vec::new();
 
-        while self.peek().kind != TokenKind::EOF {
+        while !self.at(&TokenKind::EOF) {
             let span = self.peek_span();
-            match self.peek().kind {
+            match &self.peek().kind {
                 TokenKind::Players => {
                     section_spans.players.get_or_insert(span);
                     self.parse_identifier_list_section(&mut players);
@@ -359,7 +375,7 @@ impl Parser {
                     self.parse_state_section(&mut state);
                 }
                 kind @ (TokenKind::Action | TokenKind::Actions) => {
-                    let list = kind == TokenKind::Actions;
+                    let list = *kind == TokenKind::Actions;
                     let start = actions.len();
                     if list {
                         self.parse_actions_section(&mut actions);
@@ -373,26 +389,17 @@ impl Parser {
                     });
                 }
                 TokenKind::Error(msg) => {
-                    let token = self.advance();
-                    self.error(ParseError::UnexpectedToken(token, msg));
+                    let err = ParseError::UnexpectedToken(self.peek().clone(), msg.clone());
+                    self.error(err);
+                    self.advance();
                 }
                 _ => {
-                    let token = self.peek();
-                    let mut msg = format!(
-                        "Expected section start (players, defenders, state, action, actions), but found '{}'",
-                        token.clone().kind
+                    let err = self.unexpected_keyword_error(
+                        "section start",
+                        &["players", "defenders", "state", "action", "actions"],
+                        true,
                     );
-                    let TokenKind::Identifier(ref s) = token.kind else {
-                        self.error(ParseError::UnexpectedToken(token, msg));
-                        self.advance();
-                        continue;
-                    };
-                    if let Some(sugg) =
-                        get_suggestion(s, &["players", "defenders", "state", "action", "actions"])
-                    {
-                        msg = format!("Expected section start. Did you mean '{}'?", sugg);
-                    }
-                    self.error(ParseError::UnexpectedToken(token, msg));
+                    self.error(err);
                     self.advance();
                 }
             }
@@ -414,7 +421,7 @@ impl Parser {
                 .collect::<Vec<_>>()
                 .join(", ");
             self.error(ParseError::InvalidSyntax(
-                self.peek(),
+                self.peek().clone(),
                 format!(
                     "Identifier(s) used in both 'players' and 'defenders': {}",
                     ids
@@ -428,11 +435,11 @@ impl Parser {
                 defenders,
                 state,
                 actions,
-                comments: self.comments.clone(),
+                comments: std::mem::take(&mut self.comments),
                 section_spans,
                 action_sections,
             },
-            self.errors.clone(),
+            std::mem::take(&mut self.errors),
         )
     }
 
@@ -499,7 +506,7 @@ impl Parser {
     fn parse_phase(&mut self, actions: &mut Vec<Action>) {
         if actions.len() == MAX_PHASES {
             self.error(ParseError::InvalidSyntax(
-                self.peek(),
+                self.peek().clone(),
                 format!("Maximum of {MAX_PHASES} actions allowed per playbook"),
             ));
         }
@@ -586,18 +593,12 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 _ => {
-                    let token = self.peek();
-                    let mut msg = "Expected state property (baller, position, defense)".to_string();
-                    let TokenKind::Identifier(ref s) = token.kind else {
-                        self.error(ParseError::UnexpectedToken(token, msg));
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                        self.consume_if(TokenKind::Comma);
-                        continue;
-                    };
-                    if let Some(sugg) = get_suggestion(s, &["baller", "position", "defense"]) {
-                        msg = format!("Expected state property. Did you mean '{}'?", sugg);
-                    }
-                    self.error(ParseError::UnexpectedToken(token, msg));
+                    let err = self.unexpected_keyword_error(
+                        "state property",
+                        &["baller", "position", "defense"],
+                        false,
+                    );
+                    self.error(err);
                     self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
                     self.consume_if(TokenKind::Comma);
                 }
@@ -609,35 +610,31 @@ impl Parser {
     /// distance to use (the default when a plain arrow is used).
     fn expect_defense_mark_arrow(&mut self) -> Result<f64, ParseError> {
         let token = self.peek();
-        match token.kind {
-            TokenKind::Arrow => {
-                self.advance();
-                Ok(DEFAULT_DEFENSE_OFFSET)
+        let result = match &token.kind {
+            TokenKind::Arrow => Ok(DEFAULT_DEFENSE_OFFSET),
+            TokenKind::OffsetArrow(s) => match s.parse::<f64>() {
+                Ok(value) if value.is_finite() => Ok(value),
+                Ok(_) => Err(ParseError::InvalidSyntax(
+                    token.clone(),
+                    format!("Defense offset must be a finite number: {}", s),
+                )),
+                Err(_) => Err(ParseError::InvalidSyntax(
+                    token.clone(),
+                    format!("Invalid defense offset: {}", s),
+                )),
+            },
+            TokenKind::Error(msg) => {
+                return Err(ParseError::UnexpectedToken(token.clone(), msg.clone()));
             }
-            TokenKind::OffsetArrow(ref s) => {
-                self.advance();
-                let value = s.parse::<f64>().map_err(|_| {
-                    ParseError::InvalidSyntax(
-                        token.clone(),
-                        format!("Invalid defense offset: {}", s),
-                    )
-                })?;
-                if !value.is_finite() {
-                    return Err(ParseError::InvalidSyntax(
-                        token.clone(),
-                        format!("Defense offset must be a finite number: {}", s),
-                    ));
-                }
-                Ok(value)
+            unexpected => {
+                return Err(ParseError::UnexpectedToken(
+                    token.clone(),
+                    format!("Expected '->' or '-[N]>', but found '{}'", unexpected),
+                ));
             }
-            TokenKind::Error(ref msg) => {
-                Err(ParseError::UnexpectedToken(token.clone(), msg.clone()))
-            }
-            unexpected => Err(ParseError::UnexpectedToken(
-                self.peek().clone(),
-                format!("Expected '->' or '-[N]>', but found '{}'", unexpected),
-            )),
-        }
+        };
+        self.advance();
+        result
     }
 
     /// Parses a single `defense` block entry, shared between `state.defense`
@@ -652,7 +649,7 @@ impl Parser {
     ) -> Result<(String, DefenseTarget, Span), ParseError> {
         let span = self.peek_span();
         let defender = self.expect_identifier()?;
-        match self.peek().kind {
+        match &self.peek().kind {
             TokenKind::Equals => {
                 self.advance();
                 let (x, y) = self.parse_coordinate()?;
@@ -660,7 +657,8 @@ impl Parser {
             }
             TokenKind::Arrow | TokenKind::OffsetArrow(_) => {
                 let is_explicit_offset = matches!(self.peek().kind, TokenKind::OffsetArrow(_));
-                let arrow_token = self.peek();
+                // Only cloned if an error needs it.
+                let arrow_pos = self.pos;
                 let offset = self.expect_defense_mark_arrow()?;
                 if self.peek().kind == TokenKind::LParenthesis {
                     // Consume the coordinate even when rejecting, so a bad
@@ -669,7 +667,7 @@ impl Parser {
                     let (x, y) = self.parse_coordinate()?;
                     if is_explicit_offset {
                         return Err(ParseError::InvalidSyntax(
-                            arrow_token,
+                            self.tokens[arrow_pos].clone(),
                             format!(
                                 "Explicit offset '-[{}]>' has no effect before a fixed position; use '->' instead",
                                 offset
@@ -682,11 +680,11 @@ impl Parser {
                     // Parse (and consume) any timing suffix even when it is
                     // not allowed, so it doesn't split the entry during the
                     // caller's error recovery; reject it afterwards.
-                    let colon_token = self.peek();
+                    let colon_pos = self.pos;
                     let mut timing = self.parse_optional_timing(true);
                     if !allow_timing && timing != Timing::None {
                         self.error(ParseError::InvalidSyntax(
-                            colon_token,
+                            self.tokens[colon_pos].clone(),
                             "Timing suffix is not allowed in state.defense; timing only applies to action.defense marks".to_string(),
                         ));
                         timing = Timing::None;
@@ -702,9 +700,12 @@ impl Parser {
                     ))
                 }
             }
-            TokenKind::Error(ref msg) => Err(ParseError::UnexpectedToken(self.peek(), msg.clone())),
+            TokenKind::Error(msg) => Err(ParseError::UnexpectedToken(
+                self.peek().clone(),
+                msg.clone(),
+            )),
             unexpected => Err(ParseError::UnexpectedToken(
-                self.peek(),
+                self.peek().clone(),
                 format!("Expected '=', '->' or '-[N]>', but found '{}'", unexpected),
             )),
         }
@@ -733,56 +734,59 @@ impl Parser {
 
     fn expect_arrow(&mut self) -> Result<PathType, ParseError> {
         let token = self.peek();
-        match token.kind {
-            TokenKind::Arrow => {
-                self.advance();
-                Ok(PathType::Straight)
+        let result = match &token.kind {
+            TokenKind::Arrow => Ok(PathType::Straight),
+            TokenKind::CurveArrow(spec) => Self::parse_curve(token, spec),
+            TokenKind::Error(msg) => {
+                return Err(ParseError::UnexpectedToken(token.clone(), msg.clone()));
             }
-            TokenKind::CurveArrow(ref s) => {
-                self.advance();
-                if s == "default" {
-                    return Ok(PathType::Curve(CurveDirection::Left(
-                        DEFAULT_BEZIER_CURVE_FACTOR,
-                    )));
-                }
+            unexpected => {
+                return Err(ParseError::UnexpectedToken(
+                    token.clone(),
+                    format!("Expected '->' or '~>', but found '{}'", unexpected),
+                ));
+            }
+        };
+        self.advance();
+        result
+    }
 
-                let parts: Vec<&str> = s.split(':').collect();
-                let dir_str = parts[0];
-                let factor = if parts.len() > 1 {
-                    let factor_str = parts[1];
-                    let value = factor_str.parse::<f64>().map_err(|_| {
-                        ParseError::InvalidSyntax(
-                            token.clone(),
-                            format!("Invalid curve factor: {}", factor_str),
-                        )
-                    })?;
-                    if !value.is_finite() {
-                        return Err(ParseError::InvalidSyntax(
-                            token.clone(),
-                            format!("Curve factor must be a finite number: {}", factor_str),
-                        ));
-                    }
-                    value
-                } else {
-                    DEFAULT_BEZIER_CURVE_FACTOR
-                };
+    /// Interprets the `dir[:factor]` (or `default`) payload of the curve
+    /// arrow `token`.
+    fn parse_curve(token: &Token, spec: &str) -> Result<PathType, ParseError> {
+        if spec == "default" {
+            return Ok(PathType::Curve(CurveDirection::Left(
+                DEFAULT_BEZIER_CURVE_FACTOR,
+            )));
+        }
 
-                match dir_str {
-                    "l" | "left" => Ok(PathType::Curve(CurveDirection::Left(factor))),
-                    "r" | "right" => Ok(PathType::Curve(CurveDirection::Right(factor))),
-                    _ => Err(ParseError::InvalidSyntax(
-                        self.peek().clone(),
-                        format!("Unknown curve direction: {}", dir_str),
-                    )),
+        let mut parts = spec.split(':');
+        let dir_str = parts.next().unwrap_or_default();
+        let factor = match parts.next() {
+            Some(factor_str) => {
+                let value = factor_str.parse::<f64>().map_err(|_| {
+                    ParseError::InvalidSyntax(
+                        token.clone(),
+                        format!("Invalid curve factor: {}", factor_str),
+                    )
+                })?;
+                if !value.is_finite() {
+                    return Err(ParseError::InvalidSyntax(
+                        token.clone(),
+                        format!("Curve factor must be a finite number: {}", factor_str),
+                    ));
                 }
+                value
             }
-            TokenKind::Error(ref msg) => {
-                let token = self.peek();
-                Err(ParseError::UnexpectedToken(token, msg.clone()))
-            }
-            unexpected => Err(ParseError::UnexpectedToken(
-                self.peek().clone(),
-                format!("Expected '->' or '~>', but found '{}'", unexpected),
+            None => DEFAULT_BEZIER_CURVE_FACTOR,
+        };
+
+        match dir_str {
+            "l" | "left" => Ok(PathType::Curve(CurveDirection::Left(factor))),
+            "r" | "right" => Ok(PathType::Curve(CurveDirection::Right(factor))),
+            _ => Err(ParseError::InvalidSyntax(
+                token.clone(),
+                format!("Unknown curve direction: {}", dir_str),
             )),
         }
     }
@@ -906,19 +910,12 @@ impl Parser {
                     self.consume_if(TokenKind::Comma);
                 }
                 _ => {
-                    let token = self.peek();
-                    let mut msg =
-                        "Expected action property (move, screen, pass, defense)".to_string();
-                    let TokenKind::Identifier(ref s) = token.kind else {
-                        self.error(ParseError::UnexpectedToken(token, msg));
-                        self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
-                        self.consume_if(TokenKind::Comma);
-                        continue;
-                    };
-                    if let Some(sugg) = get_suggestion(s, &["move", "screen", "pass", "defense"]) {
-                        msg = format!("Expected action property. Did you mean '{}'?", sugg);
-                    }
-                    self.error(ParseError::UnexpectedToken(token, msg));
+                    let err = self.unexpected_keyword_error(
+                        "action property",
+                        &["move", "screen", "pass", "defense"],
+                        false,
+                    );
+                    self.error(err);
                     self.recover_until(&[TokenKind::Comma, TokenKind::RBrace]);
                     self.consume_if(TokenKind::Comma);
                 }
@@ -1142,6 +1139,27 @@ mod tests {
             _ => false,
         });
         assert!(found);
+    }
+
+    #[test]
+    fn test_parse_error_unknown_curve_direction_points_at_arrow() {
+        let input = "players = { p1 }\naction = { move = { p1 ~[x]> (10, 10) } }";
+        let tokens = Lexer::new(input).tokenize();
+        let (_, errors) = Parser::new(tokens).parse();
+
+        let token = errors
+            .iter()
+            .find_map(|e| match e {
+                ParseError::InvalidSyntax(token, msg)
+                    if msg.contains("Unknown curve direction") =>
+                {
+                    Some(token)
+                }
+                _ => None,
+            })
+            .expect("expected an unknown curve direction error");
+        assert!(matches!(token.kind, TokenKind::CurveArrow(_)));
+        assert_eq!((token.span.line, token.span.column), (2, 24));
     }
 
     #[test]
