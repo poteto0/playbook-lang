@@ -1,6 +1,7 @@
 use crate::geometry::normalize;
 use crate::ir::*;
 use crate::parser::ParseError;
+use std::collections::HashMap;
 use std::fmt::Write;
 
 /// Build a single error object as a JSON string using `serde_json` so that
@@ -157,11 +158,14 @@ impl Renderer {
         let mut svg = String::new();
         svg.push_str(&self.render_court());
 
+        let last_moves = Self::last_move_indices(scene);
+        let is_last_move = |i: usize, player_id: &str| last_moves.get(player_id) == Some(&i);
+
         // 1. Draw Interactions
         for (i, interaction) in scene.interactions.iter().enumerate() {
             match interaction {
                 Interaction::Move(m) => {
-                    let is_last = self.is_last_move(scene, i, &m.player_id);
+                    let is_last = is_last_move(i, &m.player_id);
                     svg.push_str(&self.render_move(m, is_last));
                 }
                 Interaction::Pass(p) => {
@@ -171,7 +175,7 @@ impl Renderer {
                     svg.push_str(&self.render_screen(s));
                 }
                 Interaction::Defense(d) => {
-                    let is_last = self.is_last_move(scene, i, &d.defender_id);
+                    let is_last = is_last_move(i, &d.defender_id);
                     svg.push_str(&self.render_defense(d, is_last));
                 }
             }
@@ -428,16 +432,20 @@ impl Renderer {
         svg
     }
 
-    fn is_last_move(&self, scene: &Scene, current_idx: usize, player_id: &str) -> bool {
-        for i in (current_idx + 1)..scene.interactions.len() {
-            match &scene.interactions[i] {
-                Interaction::Move(m) if m.player_id == player_id => return false,
-                Interaction::Screen(s) if s.screener_id == player_id => return false,
-                Interaction::Defense(d) if d.defender_id == player_id => return false,
-                _ => {}
-            }
+    /// Map each player to the index of their last move, screen or defense in
+    /// `scene.interactions`, so the end of their path can be found in O(1).
+    fn last_move_indices(scene: &Scene) -> HashMap<&str, usize> {
+        let mut last = HashMap::with_capacity(scene.entities.len());
+        for (i, interaction) in scene.interactions.iter().enumerate() {
+            let player_id = match interaction {
+                Interaction::Move(m) => &m.player_id,
+                Interaction::Screen(s) => &s.screener_id,
+                Interaction::Defense(d) => &d.defender_id,
+                Interaction::Pass(_) => continue,
+            };
+            last.insert(player_id.as_str(), i);
         }
-        true
+        last
     }
 
     fn render_player(&self, entity: &Entity) -> String {
@@ -554,6 +562,31 @@ mod tests {
         // thinner and green to distinguish it from player move lines.
         assert!(output.contains(
             "<line x1=\"0\" y1=\"40\" x2=\"0\" y2=\"55\" stroke=\"green\" stroke-width=\"1\" marker-end=\"url(#arrowhead-defense)\" />"
+        ));
+    }
+
+    #[test]
+    fn test_only_last_move_of_each_player_has_arrowhead() {
+        let renderer = Renderer::new();
+        let input = r#"
+            players = { p1, p2, p3 }
+            state = {
+                baller = p3,
+                position = { p1 = (0, 0), p2 = (50, 50), p3 = (-50, -50) },
+            }
+            actions = [
+                action = { move = { p1 -> (10, 0), p2 -> (50, 0) } },
+                action = { screen = { p1 -> (20, 0) } },
+            ]
+        "#;
+        let output = renderer.render(input).expect("Failed to render");
+        // p1's move is followed by its screen, so it ends without an arrowhead.
+        assert!(output.contains(
+            "<line x1=\"0\" y1=\"0\" x2=\"10\" y2=\"0\" stroke=\"black\" stroke-width=\"2\" />"
+        ));
+        // p2's move is its last, so it ends with an arrowhead.
+        assert!(output.contains(
+            "<line x1=\"50\" y1=\"50\" x2=\"50\" y2=\"0\" stroke=\"black\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" />"
         ));
     }
 
