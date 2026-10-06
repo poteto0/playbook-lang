@@ -1,3 +1,5 @@
+use crate::constants::DEFAULT_MAX_INPUT_SIZE;
+
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub struct Span {
     pub start: usize,
@@ -101,6 +103,16 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Error(s) => write!(f, "Error: {}", s),
         }
     }
+}
+
+/// Maximum input size in bytes, overridable via the `MAX_INPUT_SIZE` env var
+/// (always the default on wasm, where env vars are unavailable).
+/// `Lexer::tokenize` is the single place this limit is enforced.
+fn max_input_size() -> usize {
+    std::env::var("MAX_INPUT_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_MAX_INPUT_SIZE)
 }
 
 pub struct Lexer<'a> {
@@ -376,11 +388,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn tokenize(&mut self) -> Vec<Token> {
-        let max_size = std::env::var("MAX_INPUT_SIZE")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(100 * 1024); // 100KB
-
+        let max_size = max_input_size();
         if self.input.len() > max_size {
             return vec![Token {
                 kind: TokenKind::Error(format!(
@@ -388,12 +396,7 @@ impl<'a> Lexer<'a> {
                     self.input.len(),
                     max_size
                 )),
-                span: Span {
-                    start: 0,
-                    end: 0,
-                    line: 0,
-                    column: 0,
-                },
+                span: Span::default(),
             }];
         }
 
@@ -550,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_input_too_large() {
-        let input = "a".repeat(100 * 1024 + 1);
+        let input = "a".repeat(DEFAULT_MAX_INPUT_SIZE + 1);
         let mut lexer = Lexer::new(&input);
         let tokens = lexer.tokenize();
         assert_eq!(tokens.len(), 1);

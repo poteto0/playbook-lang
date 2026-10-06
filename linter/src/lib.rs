@@ -33,20 +33,6 @@ fn ir_error_to_diagnostic(e: &IRError) -> LintDiagnostic {
 }
 
 fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
-    let max_size = std::env::var("MAX_INPUT_SIZE")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(100 * 1024); // 100KB
-
-    if input.len() > max_size {
-        return vec![LintDiagnostic {
-            line: 0,
-            column: 0,
-            message: format!("Input exceeds maximum allowed size of {} bytes", max_size),
-            severity: "error".to_string(),
-        }];
-    }
-
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
@@ -149,11 +135,7 @@ mod tests {
         let diagnostics = lint_playbook_internal(&input);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, "error");
-        assert!(
-            diagnostics[0]
-                .message
-                .contains("Input exceeds maximum allowed size")
-        );
+        assert!(diagnostics[0].message.contains("Input too large"));
     }
 
     #[test]
