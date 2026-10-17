@@ -169,6 +169,28 @@ mod tests {
     }
 
     #[test]
+    fn test_lint_duplicate_move_is_semantic_error() {
+        // Defining the same action twice for the same player in one `action`
+        // block must surface as a lint diagnostic pointing at the duplicate
+        // (second) entry, matching `render`/`play`.
+        let input = r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        action = {
+            move = {
+                p1 -> (0, 40),
+                p1 -> (50, 0),
+            }
+        }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("p1"));
+        assert!(diagnostics[0].message.contains("Duplicate action 'move'"));
+    }
+
+    #[test]
     fn test_lint_defense_mark_unknown_player_is_semantic_error() {
         // The case called out in the review: `defense = { d1 -> nosuchplayer }`
         // must produce a lint diagnostic, matching `render`/`play`'s
