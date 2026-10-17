@@ -632,6 +632,43 @@ mod tests {
     }
 
     #[test]
+    fn test_ir_error_envelope_reports_duplicate_action() {
+        // `format_ir_error` is the shared front-end error path (CLI
+        // `render`/`play` and the linter's message()/span() contract): an
+        // IR error must surface the canonical message plus the duplicate
+        // entry's line/column through the same `[Error]:[...]` envelope the
+        // parse errors use.
+        let renderer = Renderer::new();
+        let input = r#"
+        players = { p1 }
+        state = { position = { p1 = (0, 0) } }
+        action = {
+            move = {
+                p1 -> (0, 40),
+                p1 -> (50, 0),
+            }
+        }
+        "#;
+        let err = renderer.render(input).unwrap_err();
+        assert!(err.starts_with("[Error]:["), "envelope: {}", err);
+        assert!(
+            err.contains("Duplicate action 'move' for 'p1' in the same action block"),
+            "envelope: {}",
+            err
+        );
+        // The span points at the duplicate (second) entry: line 7, column 17
+        // (the `p1 -> (50, 0)` line).
+        let json: serde_json::Value = serde_json::from_str(
+            err.strip_prefix("[Error]:[")
+                .and_then(|s| s.strip_suffix("]"))
+                .expect("error envelope"),
+        )
+        .expect("valid JSON object");
+        assert_eq!(json.get("line"), Some(&serde_json::json!(7)));
+        assert_eq!(json.get("column"), Some(&serde_json::json!(17)));
+    }
+
+    #[test]
     fn test_error_message_is_valid_json() {
         // A lexer error message containing a `"` must be escaped so the
         // resulting `[Error]:[...]` payload stays parseable JSON.
