@@ -220,9 +220,10 @@ impl IRGenerator {
             // read directly from it without a separate frozen snapshot.
             let mut phase_end_defense_positions = current_defense_positions.clone();
             for defense_action in action.defenses {
-                let from = *current_defense_positions
-                    .get(&defense_action.defender)
-                    .unwrap_or(&(0.0, 0.0));
+                let defender = &defense_action.defender;
+                let from = *current_defense_positions.get(defender).ok_or_else(|| {
+                    IRError::UnexpectedPlayer(defense_action.span, defender.clone())
+                })?;
 
                 let to = resolve_defense_target(
                     &defense_action.target,
@@ -312,6 +313,18 @@ mod tests {
     use std::collections::HashMap;
 
     // Helper to create a dummy span
+    /// Builds a `state.defense` map placing each of `ids` at the fixed `pos`.
+    fn defense_at(pos: (f64, f64), ids: &[&str]) -> HashMap<String, (DefenseTarget, Span)> {
+        ids.iter()
+            .map(|id| {
+                (
+                    id.to_string(),
+                    (DefenseTarget::Position(pos.0, pos.1), dummy_span()),
+                )
+            })
+            .collect()
+    }
+
     fn dummy_span() -> Span {
         Span {
             start: 0,
@@ -528,6 +541,7 @@ mod tests {
     fn test_defender_tracks_player_after_move() {
         let mut positions = HashMap::new();
         positions.insert("p1".to_string(), ((0.0, 60.0), dummy_span()));
+        let defense = defense_at((0.0, -50.0), &["d1"]);
 
         let playbook = Playbook {
             players: vec!["p1".to_string()],
@@ -535,7 +549,7 @@ mod tests {
             state: State {
                 baller: None,
                 positions,
-                defense: HashMap::new(),
+                defense,
                 ..Default::default()
             },
             actions: vec![Action {
@@ -561,9 +575,8 @@ mod tests {
 
         let scene = IRGenerator::generate(playbook).unwrap();
 
-        // d1 has no initial defense entry, so it starts at the fallback (0, 0).
         let d1 = scene.entities.iter().find(|e| e.id == "d1").unwrap();
-        assert_eq!(d1.start_pos, (0.0, 0.0));
+        assert_eq!(d1.start_pos, (0.0, -50.0));
         // p1 ends at (0, 100); offset 5 towards center (0, 0) => (0, 95).
         assert_eq!(d1.end_pos, (0.0, 95.0));
 
@@ -576,7 +589,7 @@ mod tests {
             })
             .expect("expected a Defense interaction");
         assert_eq!(defense_interaction.defender_id, "d1");
-        assert_eq!(defense_interaction.from, (0.0, 0.0));
+        assert_eq!(defense_interaction.from, (0.0, -50.0));
         assert_eq!(defense_interaction.to, (0.0, 95.0));
     }
 
@@ -598,11 +611,14 @@ mod tests {
             span: dummy_span(),
         };
 
+        let defense = defense_at((0.0, 0.0), &["d1", "d2", "d3"]);
+
         let playbook = Playbook {
             players: vec!["p1".to_string()],
             defenders: vec!["d1".to_string(), "d2".to_string(), "d3".to_string()],
             state: State {
                 positions,
+                defense,
                 ..Default::default()
             },
             actions: vec![Action {
@@ -631,10 +647,15 @@ mod tests {
 
     #[test]
     fn test_defense_mark_unknown_player_errors() {
+        let defense = defense_at((0.0, 0.0), &["d1"]);
+
         let playbook = Playbook {
             players: vec![],
             defenders: vec!["d1".to_string()],
-            state: State::default(),
+            state: State {
+                defense,
+                ..Default::default()
+            },
             actions: vec![Action {
                 defenses: vec![DefenseAction {
                     defender: "d1".to_string(),
@@ -654,6 +675,29 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "p99"),
+            other => panic!("Expected UnexpectedPlayer, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_defense_unknown_defender_errors() {
+        // A defense entry for a defender with no known position must error
+        // like a move for an unknown player.
+        let playbook = Playbook {
+            defenders: vec!["d1".to_string()],
+            actions: vec![Action {
+                defenses: vec![DefenseAction {
+                    defender: "x9".to_string(),
+                    target: DefenseTarget::Position(10.0, 0.0),
+                    span: dummy_span(),
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        match IRGenerator::generate(playbook).unwrap_err() {
+            IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "x9"),
             other => panic!("Expected UnexpectedPlayer, got {:?}", other),
         }
     }

@@ -191,7 +191,7 @@ mod tests {
         let input = r#"
         players = { p1 }
         defenders = { d1 }
-        state = { position = { p1 = (0, 0) } }
+        state = { position = { p1 = (0, 0) }, defense = { d1 -> (0, 0) } }
         action = { defense = { d1 -> nosuchplayer } }
         "#;
         let diagnostics = lint_playbook_internal(input);
@@ -199,6 +199,20 @@ mod tests {
         assert_eq!(diagnostics[0].severity, "error");
         assert!(diagnostics[0].message.contains("nosuchplayer"));
         assert!(diagnostics[0].message.contains("not found"));
+    }
+
+    #[test]
+    fn test_lint_defense_unknown_defender_is_semantic_error() {
+        let input = r#"
+        players = { p1 }
+        defenders = { d1 }
+        state = { position = { p1 = (0, 0) } }
+        action = { defense = { x9 -> (10, 0) } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("x9"));
     }
 
     #[test]
