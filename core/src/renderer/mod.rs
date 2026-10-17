@@ -78,10 +78,17 @@ impl Default for Renderer {
     }
 }
 
+/// Failure of the shared lex → parse → IR pipeline, kept typed so callers
+/// can distinguish the two stages; formatting into the `[Error]:[...]`
+/// envelope happens at the `play` / `render` boundary.
+enum CompileError {
+    Parse(Vec<ParseError>),
+    Ir(IRError),
+}
+
 impl Renderer {
-    /// Run the shared lex → parse → IR pipeline and return the resulting
-    /// `Scene`, or a formatted `[Error]:[...]` payload for the frontend.
-    fn compile(&self, input: &str) -> Result<Scene, String> {
+    /// Run the shared lex → parse → IR pipeline and return the resulting `Scene`.
+    fn compile(&self, input: &str) -> Result<Scene, CompileError> {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
@@ -89,14 +96,17 @@ impl Renderer {
         let (playbook, errors) = parser.parse();
 
         if !errors.is_empty() {
-            return Err(format_parse_errors(&errors));
+            return Err(CompileError::Parse(errors));
         }
 
-        IRGenerator::generate(playbook).map_err(|e| format_ir_error(&e))
+        IRGenerator::generate(playbook).map_err(CompileError::Ir)
     }
 
     pub fn play(&self, input: &str) -> Result<String, String> {
-        let scene = self.compile(input)?;
+        let scene = self.compile(input).map_err(|e| match e {
+            CompileError::Parse(errors) => format_parse_errors(&errors),
+            CompileError::Ir(e) => format_ir_error(&e),
+        })?;
         let mut output = String::new();
 
         let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
@@ -486,7 +496,10 @@ impl Renderer {
     }
 
     pub fn render(&self, input: &str) -> Result<String, String> {
-        let scene = self.compile(input)?;
+        let scene = self.compile(input).map_err(|e| match e {
+            CompileError::Parse(errors) => format_parse_errors(&errors),
+            CompileError::Ir(e) => format_ir_error(&e),
+        })?;
         Ok(self.render_scene(&scene))
     }
 }
