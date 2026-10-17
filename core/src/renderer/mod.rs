@@ -1,6 +1,7 @@
 use crate::geometry::normalize;
 use crate::ir::*;
-use crate::parser::ParseError;
+use crate::lexer::Lexer;
+use crate::parser::{ParseError, Parser};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -78,11 +79,9 @@ impl Default for Renderer {
 }
 
 impl Renderer {
-    pub fn play(&self, input: &str) -> Result<String, String> {
-        use crate::ir::IRGenerator;
-        use crate::lexer::Lexer;
-        use crate::parser::Parser;
-
+    /// Run the shared lex → parse → IR pipeline and return the resulting
+    /// `Scene`, or a formatted `[Error]:[...]` payload for the frontend.
+    fn compile(&self, input: &str) -> Result<Scene, String> {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
@@ -93,58 +92,58 @@ impl Renderer {
             return Err(format_parse_errors(&errors));
         }
 
-        match IRGenerator::generate(playbook) {
-            Ok(scene) => {
-                let mut output = String::new();
+        IRGenerator::generate(playbook).map_err(|e| format_ir_error(&e))
+    }
 
-                let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
-                    .entities
-                    .iter()
-                    .partition(|e| e.kind == EntityKind::Player);
+    pub fn play(&self, input: &str) -> Result<String, String> {
+        let scene = self.compile(input)?;
+        let mut output = String::new();
 
-                // players
-                let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
-                output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
+        let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
+            .entities
+            .iter()
+            .partition(|e| e.kind == EntityKind::Player);
 
-                if !defenders.is_empty() {
-                    let defender_ids: Vec<&str> = defenders.iter().map(|e| e.id.as_str()).collect();
-                    output.push_str(&format!(
-                        "defenders = {{ {} }}\n\n",
-                        defender_ids.join(", ")
-                    ));
-                }
+        // players
+        let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
+        output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
 
-                // state
-                output.push_str("state = {\n");
-                if let Some(baller) = &scene.final_baller {
-                    output.push_str(&format!("  baller = {},\n", baller));
-                }
-
-                output.push_str("  position = {\n");
-                for entity in &players {
-                    output.push_str(&format!(
-                        "    {} = ({}, {}),\n",
-                        entity.id, entity.end_pos.0, entity.end_pos.1
-                    ));
-                }
-                output.push_str("  },\n");
-
-                if !defenders.is_empty() {
-                    output.push_str("  defense = {\n");
-                    for entity in &defenders {
-                        output.push_str(&format!(
-                            "    {} = ({}, {}),\n",
-                            entity.id, entity.end_pos.0, entity.end_pos.1
-                        ));
-                    }
-                    output.push_str("  },\n");
-                }
-                output.push_str("}\n");
-
-                Ok(output)
-            }
-            Err(e) => Err(format_ir_error(&e)),
+        if !defenders.is_empty() {
+            let defender_ids: Vec<&str> = defenders.iter().map(|e| e.id.as_str()).collect();
+            output.push_str(&format!(
+                "defenders = {{ {} }}\n\n",
+                defender_ids.join(", ")
+            ));
         }
+
+        // state
+        output.push_str("state = {\n");
+        if let Some(baller) = &scene.final_baller {
+            output.push_str(&format!("  baller = {},\n", baller));
+        }
+
+        output.push_str("  position = {\n");
+        for entity in &players {
+            output.push_str(&format!(
+                "    {} = ({}, {}),\n",
+                entity.id, entity.end_pos.0, entity.end_pos.1
+            ));
+        }
+        output.push_str("  },\n");
+
+        if !defenders.is_empty() {
+            output.push_str("  defense = {\n");
+            for entity in &defenders {
+                output.push_str(&format!(
+                    "    {} = ({}, {}),\n",
+                    entity.id, entity.end_pos.0, entity.end_pos.1
+                ));
+            }
+            output.push_str("  },\n");
+        }
+        output.push_str("}\n");
+
+        Ok(output)
     }
 
     pub fn new() -> Self {
@@ -487,24 +486,8 @@ impl Renderer {
     }
 
     pub fn render(&self, input: &str) -> Result<String, String> {
-        use crate::ir::IRGenerator;
-        use crate::lexer::Lexer;
-        use crate::parser::Parser;
-
-        let mut lexer = Lexer::new(input);
-        let tokens = lexer.tokenize();
-        let mut parser = Parser::new(tokens);
-
-        let (playbook, errors) = parser.parse();
-
-        if !errors.is_empty() {
-            return Err(format_parse_errors(&errors));
-        }
-
-        match IRGenerator::generate(playbook) {
-            Ok(scene) => Ok(self.render_scene(&scene)),
-            Err(e) => Err(format_ir_error(&e)),
-        }
+        let scene = self.compile(input)?;
+        Ok(self.render_scene(&scene))
     }
 }
 
