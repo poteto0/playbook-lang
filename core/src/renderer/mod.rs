@@ -25,7 +25,6 @@ fn format_parse_errors(errors: &[ParseError]) -> String {
             ParseError::UnexpectedToken(token, msg) | ParseError::InvalidSyntax(token, msg) => {
                 error_json(token.span.line, token.span.column, token.span.len(), msg)
             }
-            ParseError::UnexpectedEOF => error_json(0, 0, 0, "Unexpected end of file"),
         })
         .collect();
 

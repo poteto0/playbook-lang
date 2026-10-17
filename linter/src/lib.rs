@@ -35,27 +35,19 @@ fn lint_playbook_internal(input: &str) -> Vec<LintDiagnostic> {
     if !errors.is_empty() {
         return errors
             .into_iter()
-            .map(|e| {
-                match e {
-                    ParseError::UnexpectedToken(token, msg) => LintDiagnostic {
-                        line: token.span.line,
-                        column: token.span.column,
-                        message: msg,
-                        severity: "error".to_string(),
-                    },
-                    ParseError::InvalidSyntax(token, msg) => LintDiagnostic {
-                        line: token.span.line,
-                        column: token.span.column,
-                        message: msg,
-                        severity: "error".to_string(),
-                    },
-                    ParseError::UnexpectedEOF => LintDiagnostic {
-                        line: 0,
-                        column: 0, // TODO: improve location for EOF
-                        message: "Unexpected End of File".to_string(),
-                        severity: "error".to_string(),
-                    },
-                }
+            .map(|e| match e {
+                ParseError::UnexpectedToken(token, msg) => LintDiagnostic {
+                    line: token.span.line,
+                    column: token.span.column,
+                    message: msg,
+                    severity: "error".to_string(),
+                },
+                ParseError::InvalidSyntax(token, msg) => LintDiagnostic {
+                    line: token.span.line,
+                    column: token.span.column,
+                    message: msg,
+                    severity: "error".to_string(),
+                },
             })
             .collect();
     }
