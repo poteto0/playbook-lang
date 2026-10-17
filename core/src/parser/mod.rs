@@ -1053,12 +1053,12 @@ mod tests {
     #[test]
     fn test_parse_curved_path_with_factor() {
         let input = r#"
-        players = { p1 }
+        players = { p1, p2 }
         state = { }
         action = {
             move = {
                 p1 ~[l:0.5]> (10, 10),
-                p1 ~[r:0.1]> (20, 20)
+                p2 ~[r:0.1]> (20, 20)
             },
         }
         "#;
@@ -1083,12 +1083,12 @@ mod tests {
         // Values longer than 3 characters (0.25, -0.5) used to be rejected by an
         // arbitrary byte-length check. They are valid coefficients and must parse.
         let input = r#"
-        players = { p1 }
+        players = { p1, p2 }
         state = { }
         action = {
             move = {
                 p1 ~[l:0.25]> (10, 10),
-                p1 ~[r:-0.5]> (20, 20)
+                p2 ~[r:-0.5]> (20, 20)
             },
         }
         "#;
