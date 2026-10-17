@@ -25,7 +25,6 @@ fn format_parse_errors(errors: &[ParseError]) -> String {
             ParseError::UnexpectedToken(token, msg) | ParseError::InvalidSyntax(token, msg) => {
                 error_json(token.span.line, token.span.column, token.span.len(), msg)
             }
-            ParseError::UnexpectedEOF => error_json(0, 0, 0, "Unexpected end of file"),
         })
         .collect();
 
@@ -90,58 +89,37 @@ impl Renderer {
         IRGenerator::generate(playbook).map_err(CompileError::Ir)
     }
 
+    /// Run the playbook through the shared lex → parse → IR pipeline and
+    /// return the final positions as a JSON object:
+    /// `{ "players": { id: [x, y] }, "defenders": { id: [x, y] }, "baller": id | null }`.
     pub fn play(&self, input: &str) -> Result<String, String> {
         let scene = self.compile(input).map_err(|e| match e {
             CompileError::Parse(errors) => format_parse_errors(&errors),
             CompileError::Ir(e) => format_ir_error(&e),
         })?;
-        let mut output = String::new();
 
         let (players, defenders): (Vec<&Entity>, Vec<&Entity>) = scene
             .entities
             .iter()
             .partition(|e| e.kind == EntityKind::Player);
 
-        // players
-        let player_ids: Vec<&str> = players.iter().map(|e| e.id.as_str()).collect();
-        output.push_str(&format!("players = {{ {} }}\n\n", player_ids.join(", ")));
-
-        if !defenders.is_empty() {
-            let defender_ids: Vec<&str> = defenders.iter().map(|e| e.id.as_str()).collect();
-            output.push_str(&format!(
-                "defenders = {{ {} }}\n\n",
-                defender_ids.join(", ")
-            ));
-        }
-
-        // state
-        output.push_str("state = {\n");
-        if let Some(baller) = &scene.final_baller {
-            output.push_str(&format!("  baller = {},\n", baller));
-        }
-
-        output.push_str("  position = {\n");
-        for entity in &players {
-            output.push_str(&format!(
-                "    {} = ({}, {}),\n",
-                entity.id, entity.end_pos.0, entity.end_pos.1
-            ));
-        }
-        output.push_str("  },\n");
-
-        if !defenders.is_empty() {
-            output.push_str("  defense = {\n");
-            for entity in &defenders {
-                output.push_str(&format!(
-                    "    {} = ({}, {}),\n",
-                    entity.id, entity.end_pos.0, entity.end_pos.1
-                ));
+        let position = |entities: &[&Entity]| -> serde_json::Map<String, serde_json::Value> {
+            let mut positions = serde_json::Map::new();
+            for entity in entities {
+                positions.insert(
+                    entity.id.clone(),
+                    serde_json::json!([entity.end_pos.0, entity.end_pos.1]),
+                );
             }
-            output.push_str("  },\n");
-        }
-        output.push_str("}\n");
+            positions
+        };
 
-        Ok(output)
+        Ok(serde_json::json!({
+            "players": position(&players),
+            "defenders": position(&defenders),
+            "baller": scene.final_baller,
+        })
+        .to_string())
     }
 
     pub fn new() -> Self {
@@ -578,18 +556,34 @@ mod tests {
     fn test_play_reports_defenders_separately_from_players() {
         let renderer = Renderer::new();
         let input = r#"
-            players = { p1 }
+            players = { p1, p2, p3 }
             defenders = { d1 }
             state = {
-                position = { p1 = (0, 60) },
+                baller = p1,
+                position = { p1 = (0, 60), p2 = (50, 50), p3 = (0, 0) },
                 defense = { d1 -> p1 },
+            }
+            action = {
+                move = { p1 -> (0, 0) },
             }
         "#;
         let output = renderer.play(input).expect("Failed to play");
-        assert!(output.contains("players = { p1 }"));
-        assert!(output.contains("defenders = { d1 }"));
-        assert!(!output.contains("players = { p1, d1 }"));
-        assert!(output.contains("defense = {"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&output).expect("play output must be valid JSON");
+        let players = parsed.get("players").expect("players key");
+        let defenders = parsed.get("defenders").expect("defenders key");
+        // Players and defenders are reported separately...
+        assert!(players.get("p1").is_some());
+        assert!(players.get("p2").is_some());
+        assert!(players.get("d1").is_none());
+        assert!(defenders.get("d1").is_some());
+        assert!(defenders.get("p1").is_none());
+        // ... with end positions, not start positions (p1 ends at (0, 0)).
+        assert_eq!(players.get("p1"), Some(&serde_json::json!([0.0, 0.0])));
+        // Defender d1 has no defense action, so it stays at its marked spot.
+        assert_eq!(defenders.get("d1"), Some(&serde_json::json!([0.0, 40.0])));
+        // The final baller is exposed.
+        assert_eq!(parsed.get("baller"), Some(&serde_json::json!("p1")));
     }
 
     #[test]

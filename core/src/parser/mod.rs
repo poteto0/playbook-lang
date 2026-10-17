@@ -6,7 +6,6 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum ParseError {
     UnexpectedToken(Token, String),
-    UnexpectedEOF,
     InvalidSyntax(Token, String),
 }
 
@@ -18,7 +17,6 @@ impl fmt::Display for ParseError {
                 "unexpected token at line {}, column {}: {}",
                 token.span.line, token.span.column, msg
             ),
-            ParseError::UnexpectedEOF => write!(f, "unexpected end of input"),
             ParseError::InvalidSyntax(token, msg) => write!(
                 f,
                 "invalid syntax at line {}, column {}: {}",
