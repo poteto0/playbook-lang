@@ -8,13 +8,22 @@ use std::fmt;
 pub enum IRError {
     UnexpectedPlayer(Span, String),
     PlayerNotBaller(Span, String),
+    /// A player listed in `players` has no entry in `state.position`. The
+    /// span points at the `players` section keyword.
+    MissingPosition(Span, String),
+    /// A defender listed in `defenders` has no entry in `state.defense`. The
+    /// span points at the `defenders` section keyword.
+    MissingDefensePosition(Span, String),
 }
 
 impl IRError {
     /// The span of the source text that caused this error.
     pub fn span(&self) -> &Span {
         match self {
-            IRError::UnexpectedPlayer(span, _) | IRError::PlayerNotBaller(span, _) => span,
+            IRError::UnexpectedPlayer(span, _)
+            | IRError::PlayerNotBaller(span, _)
+            | IRError::MissingPosition(span, _)
+            | IRError::MissingDefensePosition(span, _) => span,
         }
     }
 
@@ -28,6 +37,12 @@ impl IRError {
             IRError::UnexpectedPlayer(_, name) => format!("Player '{}' not found in state", name),
             IRError::PlayerNotBaller(_, name) => {
                 format!("Player '{}' does not have the ball", name)
+            }
+            IRError::MissingPosition(_, name) => {
+                format!("Player '{}' has no position in state", name)
+            }
+            IRError::MissingDefensePosition(_, name) => {
+                format!("Defender '{}' has no defense entry in state", name)
             }
         }
     }

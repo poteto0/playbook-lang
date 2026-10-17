@@ -14,3 +14,5 @@ defenders = {d1, d2}
 ```
 
 Defenders are drawn as a plain `x` mark, without the circle used for players, and never carry the ball.
+
+Every defender listed here must have a `state.defense` entry (a position or a mark); otherwise generation fails with a `Defender '...' has no defense entry in state` error instead of silently drawing the defender at the court origin.
