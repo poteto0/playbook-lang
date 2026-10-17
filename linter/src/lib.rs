@@ -195,11 +195,26 @@ mod tests {
     }
 
     #[test]
+    fn test_lint_missing_position_is_semantic_error() {
+        // A player listed in `players` without a `state.position` entry must
+        // surface as a lint diagnostic, not silently render at (0, 0).
+        let input = r#"
+        players = { p1, p2 }
+        state = { position = { p1 = (0, 0) } }
+        "#;
+        let diagnostics = lint_playbook_internal(input);
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {:?}", diagnostics);
+        assert_eq!(diagnostics[0].severity, "error");
+        assert!(diagnostics[0].message.contains("p2"));
+        assert!(diagnostics[0].message.contains("no position"));
+    }
+
+    #[test]
     fn test_lint_defense_unknown_defender_is_semantic_error() {
         let input = r#"
         players = { p1 }
         defenders = { d1 }
-        state = { position = { p1 = (0, 0) } }
+        state = { position = { p1 = (0, 0) }, defense = { d1 -> (0, 0) } }
         action = { defense = { x9 -> (10, 0) } }
         "#;
         let diagnostics = lint_playbook_internal(input);
