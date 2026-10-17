@@ -120,11 +120,12 @@ impl IRGenerator {
         let mut current_defense_positions = initial_defense_positions.clone();
 
         // Every player listed in `players`, and every defender listed in
-        // `defenders`, must have a position in `state`; without one it would
-        // be drawn at (0, 0), hiding a real mistake from the author. Fail
-        // with an error that points at the corresponding section keyword.
-        // `section_spans` is always populated by the parser for these
-        // sections; `Span::default()` only covers direct API users.
+        // `defenders`, must have a position in `state` (`state.position` and
+        // `state.defense` respectively); without one it would be drawn at
+        // (0, 0), hiding a real mistake from the author. Fail with an error
+        // that points at the corresponding section keyword. `section_spans`
+        // is always populated by the parser for these sections;
+        // `Span::default()` only covers direct API users.
         for player_id in &playbook.players {
             if !initial_positions.contains_key(player_id) {
                 return Err(IRError::MissingPosition(
@@ -134,8 +135,11 @@ impl IRGenerator {
             }
         }
         for defender_id in &playbook.defenders {
-            if !current_defense_positions.contains_key(defender_id) {
-                return Err(IRError::MissingPosition(
+            // The initial map is byte-identical here (it is cloned once);
+            // read it so the pre-action-loop invariant stays clear even if
+            // the code below is reordered.
+            if !initial_defense_positions.contains_key(defender_id) {
+                return Err(IRError::MissingDefensePosition(
                     playbook.section_spans.defenders.unwrap_or_default(),
                     defender_id.clone(),
                 ));
@@ -831,23 +835,43 @@ mod tests {
         let result = IRGenerator::generate(playbook);
         assert!(result.is_err());
         match result.unwrap_err() {
-            IRError::MissingPosition(span, name) => {
+            IRError::MissingDefensePosition(span, name) => {
                 assert_eq!(name, "d1");
                 assert_eq!(span.line, 2);
                 assert_eq!(span.column, 1);
             }
-            other => panic!("Expected MissingPosition, got {:?}", other),
+            other => panic!("Expected MissingDefensePosition, got {:?}", other),
         }
     }
 
     #[test]
     fn test_missing_position_message() {
-        let err = IRError::MissingPosition(dummy_span(), "p2".to_string());
-        assert_eq!(err.message(), "Player 'p2' has no position in state");
+        let player = IRError::MissingPosition(dummy_span(), "p2".to_string());
+        assert_eq!(player.message(), "Player 'p2' has no position in state");
+        let defender = IRError::MissingDefensePosition(dummy_span(), "d2".to_string());
         assert_eq!(
-            err.to_string(),
-            "Player 'p2' has no position in state (line 0, column 0)"
+            defender.message(),
+            "Defender 'd2' has no defense entry in state"
         );
+    }
+
+    #[test]
+    fn test_missing_position_defaults_span_for_direct_api_users() {
+        // Without `section_spans` (only possible for callers that build a
+        // `Playbook` directly, bypassing the parser) the error still fires,
+        // with the default span.
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            ..Default::default()
+        };
+        let result = IRGenerator::generate(playbook);
+        match result.unwrap_err() {
+            IRError::MissingPosition(span, name) => {
+                assert_eq!(name, "p1");
+                assert_eq!((span.line, span.column), (0, 0));
+            }
+            other => panic!("Expected MissingPosition, got {:?}", other),
+        }
     }
 
     #[test]
