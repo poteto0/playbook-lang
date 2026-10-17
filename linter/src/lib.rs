@@ -12,23 +12,16 @@ pub struct LintDiagnostic {
     pub severity: String,
 }
 
-/// Converts an `IRError` into a diagnostic, mirroring the message text used
-/// by `Renderer::format_ir_error` (core/src/renderer/mod.rs) so `lint` and
-/// `render`/`play` report the same wording for the same semantic error.
+/// Converts an `IRError` into a diagnostic, using the canonical message
+/// text from `IRError::message()` so `lint` and `render`/`play` report
+/// the same wording for the same semantic error.
 fn ir_error_to_diagnostic(e: &IRError) -> LintDiagnostic {
-    match e {
-        IRError::UnexpectedPlayer(span, name) => LintDiagnostic {
-            line: span.line,
-            column: span.column,
-            message: format!("Player '{}' not found in state", name),
-            severity: "error".to_string(),
-        },
-        IRError::PlayerNotBaller(span, name) => LintDiagnostic {
-            line: span.line,
-            column: span.column,
-            message: format!("Player '{}' does not have the ball", name),
-            severity: "error".to_string(),
-        },
+    let span = e.span();
+    LintDiagnostic {
+        line: span.line,
+        column: span.column,
+        message: e.message(),
+        severity: "error".to_string(),
     }
 }
 
