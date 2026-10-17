@@ -119,6 +119,29 @@ impl IRGenerator {
             resolve_initial_defense_positions(&playbook.state.defense, &initial_positions)?;
         let mut current_defense_positions = initial_defense_positions.clone();
 
+        // Every player listed in `players`, and every defender listed in
+        // `defenders`, must have a position in `state`; without one it would
+        // be drawn at (0, 0), hiding a real mistake from the author. Fail
+        // with an error that points at the corresponding section keyword.
+        // `section_spans` is always populated by the parser for these
+        // sections; `Span::default()` only covers direct API users.
+        for player_id in &playbook.players {
+            if !initial_positions.contains_key(player_id) {
+                return Err(IRError::MissingPosition(
+                    playbook.section_spans.players.unwrap_or_default(),
+                    player_id.clone(),
+                ));
+            }
+        }
+        for defender_id in &playbook.defenders {
+            if !current_defense_positions.contains_key(defender_id) {
+                return Err(IRError::MissingPosition(
+                    playbook.section_spans.defenders.unwrap_or_default(),
+                    defender_id.clone(),
+                ));
+            }
+        }
+
         for action in playbook.actions {
             let phase_start_positions = current_positions.clone();
             let mut phase_end_positions = phase_start_positions.clone();
@@ -251,21 +274,10 @@ impl IRGenerator {
         // entities for drawing
         let initial_baller = playbook.state.baller.as_ref();
         for player_id in playbook.players {
-            // If a player listed in 'players' is not in 'state.positions', that's an issue
-            // but we don't have a specific span for 'players' list entries here easily unless passed.
-            // But they should be in initial_positions.
-            // If not, we can default to (0,0) or error.
-            // Since we don't have a span for the player definition here, let's skip or error with dummy span.
-            // Better: use a dummy span or change the return type.
-            // For now, let's assume they exist or error with a generic span if possible,
-            // but we don't have one.
-            // We will use unwrap_or for now as this is less critical than action errors,
-            // or we could use the first action's span if available? No.
-            // Let's keep unwrap_or for entity generation as a fallback, or better:
-            // Since initial_positions comes from state, if they aren't there, they aren't on court.
-
-            let start_pos = *initial_positions.get(&player_id).unwrap_or(&(0.0, 0.0));
-            let end_pos = *current_positions.get(&player_id).unwrap_or(&start_pos);
+            // Positions were validated above: every listed player is present
+            // in both maps, so indexing is total.
+            let start_pos = initial_positions[&player_id];
+            let end_pos = current_positions[&player_id];
             let is_baller = initial_baller == Some(&player_id);
 
             entities.push(Entity {
@@ -280,12 +292,8 @@ impl IRGenerator {
 
         // Defenders are drawn with a fixed "x" label and never carry the ball.
         for defender_id in playbook.defenders {
-            let start_pos = *initial_defense_positions
-                .get(&defender_id)
-                .unwrap_or(&(0.0, 0.0));
-            let end_pos = *current_defense_positions
-                .get(&defender_id)
-                .unwrap_or(&start_pos);
+            let start_pos = initial_defense_positions[&defender_id];
+            let end_pos = current_defense_positions[&defender_id];
 
             entities.push(Entity {
                 id: defender_id,
@@ -331,6 +339,17 @@ mod tests {
             end: 0,
             line: 0,
             column: 0,
+        }
+    }
+
+    /// Span whose line/column match the assertion variables of the
+    /// missing-position tests.
+    fn span_at(line: usize, column: usize) -> Span {
+        Span {
+            start: 10,
+            end: 17,
+            line,
+            column,
         }
     }
 
@@ -682,9 +701,20 @@ mod tests {
     #[test]
     fn test_defense_unknown_defender_errors() {
         // A defense entry for a defender with no known position must error
-        // like a move for an unknown player.
+        // like a move for an unknown player. `d1` gets a state position so
+        // the error is about the action entry `x9`, not the missing state
+        // position (see test_missing_player_position_errors).
+        let mut defense = HashMap::new();
+        defense.insert(
+            "d1".to_string(),
+            (DefenseTarget::Position(0.0, 0.0), dummy_span()),
+        );
         let playbook = Playbook {
             defenders: vec!["d1".to_string()],
+            state: State {
+                defense,
+                ..Default::default()
+            },
             actions: vec![Action {
                 defenses: vec![DefenseAction {
                     defender: "x9".to_string(),
@@ -737,6 +767,87 @@ mod tests {
             IRError::UnexpectedPlayer(_, name) => assert_eq!(name, "p99"),
             other => panic!("Expected UnexpectedPlayer, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_missing_position_errors() {
+        // A player listed in `players` without a `state.position` entry must
+        // error instead of being silently drawn at (0, 0).
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+
+        let section_spans = SectionSpans {
+            players: Some(span_at(1, 1)),
+            ..Default::default()
+        };
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string(), "p2".to_string()],
+            state: State {
+                positions,
+                ..Default::default()
+            },
+            section_spans,
+            ..Default::default()
+        };
+
+        let result = IRGenerator::generate(playbook);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IRError::MissingPosition(span, name) => {
+                assert_eq!(name, "p2");
+                assert_eq!(span.line, 1);
+                assert_eq!(span.column, 1);
+            }
+            other => panic!("Expected MissingPosition, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_missing_defender_position_errors() {
+        // A defender listed in `defenders` without a `state.defense` entry
+        // (and without any position from a defense action) must error,
+        // pointing at the `defenders` section keyword.
+        let section_spans = SectionSpans {
+            defenders: Some(span_at(2, 1)),
+            ..Default::default()
+        };
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            defenders: vec!["d1".to_string()],
+            state: State {
+                positions: {
+                    let mut positions = HashMap::new();
+                    positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+                    positions
+                },
+                ..Default::default()
+            },
+            section_spans,
+            ..Default::default()
+        };
+
+        let result = IRGenerator::generate(playbook);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            IRError::MissingPosition(span, name) => {
+                assert_eq!(name, "d1");
+                assert_eq!(span.line, 2);
+                assert_eq!(span.column, 1);
+            }
+            other => panic!("Expected MissingPosition, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_missing_position_message() {
+        let err = IRError::MissingPosition(dummy_span(), "p2".to_string());
+        assert_eq!(err.message(), "Player 'p2' has no position in state");
+        assert_eq!(
+            err.to_string(),
+            "Player 'p2' has no position in state (line 0, column 0)"
+        );
     }
 
     #[test]
