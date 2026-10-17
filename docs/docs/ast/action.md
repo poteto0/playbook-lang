@@ -201,3 +201,18 @@ action = {
 
 <svg width="500" height="500" viewBox="-105 -105 210 210" xmlns="http://www.w3.org/2000/svg"><rect x="-105" y="-105" width="210" height="210" fill="white" /><rect x="-100" y="-90" width="200" height="180" fill="white" stroke="black" stroke-width="2" /><rect x="-20" y="-90" width="40" height="65" fill="none" stroke="black" stroke-width="1" /><circle cx="0" cy="-25" r="20" fill="none" stroke="black" stroke-width="1" /><path d="M -80 -90 L -80 -35 A 80 80 0 0 0 80 -35 L 80 -90" fill="none" stroke="black" stroke-width="1" /><path d="M -20 90 A 20 20 0 0 1 20 90" fill="none" stroke="black" stroke-width="1" /><line x1="-12" y1="-88" x2="12" y2="-88" stroke="black" stroke-width="1" /><circle cx="0" cy="-84" r="5" stroke="red" stroke-width="1" fill="none" /><line x1="0" y1="60" x2="0" y2="0" stroke="black" stroke-width="2" marker-end="url(#arrowhead)" /><line x1="0" y1="40" x2="0" y2="0" stroke="green" stroke-width="1" marker-end="url(#arrowhead-defense)" /><circle cx="0" cy="60" r="10" fill="white" stroke="black" stroke-width="2" /><text x="0" y="60" font-size="12" text-anchor="middle" dominant-baseline="central" font-family="Arial">1</text><text x="0" y="40" font-size="18" text-anchor="middle" dominant-baseline="central" font-family="Arial">x</text><defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="black" /></marker><marker id="arrowhead-defense" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="green" /></marker></defs></svg>
 
+## Duplicate Actions Are an Error
+
+Within a single `action` block, the same player may appear at most once per action kind, and the same defender at most once in `defense`. The duplicate (second) entry is reported as an error such as `Duplicate action 'move' for 'p1' in the same action block`, pointing at its span.
+
+```playbook
+action = {
+  move = {
+    p1 -> (0, 40),
+    p1 -> (50, 0),  // error: duplicate 'move' for 'p1' in this block
+  }
+}
+```
+
+The rule applies per action kind, so a player may combine different kinds in one block (e.g. a `move` and then a `pass`, where the pass reads the move's end position). If a player should perform the same kind of action again, place the next entries in a separate phase ([Multiple Action](./multiple_action.md)); each `action` block is checked independently, so the same player can move once per phase.
+

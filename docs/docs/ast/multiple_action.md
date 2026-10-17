@@ -7,6 +7,8 @@ sidebar_position: 5
 You can define sequential actions using the `actions` array. Up to 3 actions are supported per playbook, counted across all `action` and `actions` sections.
 Each action creates a new "phase". Timing indicators like `:before` or `:after` refer to the state at the beginning or end of that specific phase.
 
+The [duplicate-action rule](./action.md#duplicate-actions-are-an-error) applies per `action` block: the same player may move (or screen) at most once per phase, and can move again in the next phase.
+
 ```playbook
 players = { p1, p2 }
 

@@ -14,6 +14,10 @@ pub enum IRError {
     /// A defender listed in `defenders` has no entry in `state.defense`. The
     /// span points at the `defenders` section keyword.
     MissingDefensePosition(Span, String),
+    /// The same player (or defender) is given the same action kind more than
+    /// once inside one `action` block, e.g. two `move` entries for `p1`. The
+    /// span points at the duplicate (second) entry.
+    DuplicateAction(Span, &'static str, String),
 }
 
 impl IRError {
@@ -23,7 +27,8 @@ impl IRError {
             IRError::UnexpectedPlayer(span, _)
             | IRError::PlayerNotBaller(span, _)
             | IRError::MissingPosition(span, _)
-            | IRError::MissingDefensePosition(span, _) => span,
+            | IRError::MissingDefensePosition(span, _)
+            | IRError::DuplicateAction(span, _, _) => span,
         }
     }
 
@@ -43,6 +48,12 @@ impl IRError {
             }
             IRError::MissingDefensePosition(_, name) => {
                 format!("Defender '{}' has no defense entry in state", name)
+            }
+            IRError::DuplicateAction(_, kind, name) => {
+                format!(
+                    "Duplicate action '{}' for '{}' in the same action block",
+                    kind, name
+                )
             }
         }
     }

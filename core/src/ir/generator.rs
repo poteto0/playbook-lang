@@ -1,8 +1,8 @@
-use crate::ast::{DefenseTarget, PathType, Playbook, ScreenTarget, Timing};
+use crate::ast::{Action, DefenseTarget, PathType, Playbook, ScreenTarget, Timing};
 use crate::geometry::normalize;
 use crate::ir::*;
 use crate::lexer::Span;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct IRGenerator;
 
@@ -101,6 +101,42 @@ fn resolve_timed_position(
         .ok_or_else(|| IRError::UnexpectedPlayer(span, player_id.to_string()))
 }
 
+/// Checks that no entity is given the same action `kind` (e.g. `move`) twice
+/// inside one `action` block. Two entries of the same kind for the same id
+/// are processed sequentially over the same phase, rendering contradictory
+/// overlapping lines from the same start position, so the duplicate (second)
+/// entry is an error instead. `span_of` yields the source span of each entry.
+fn validate_unique<'a, E>(
+    kind: &'static str,
+    entries: impl IntoIterator<Item = E>,
+    span_of: impl Fn(&E) -> Span,
+    id_of: impl Fn(&E) -> &'a str,
+) -> Result<(), IRError> {
+    let mut seen = HashSet::new();
+    for entry in entries {
+        let id = id_of(&entry);
+        if !seen.insert(id) {
+            let span = span_of(&entry);
+            return Err(IRError::DuplicateAction(span, kind, id.to_string()));
+        }
+    }
+    Ok(())
+}
+
+/// Validates one `action` block's duplicate-entry rules (see
+/// [`validate_unique`]): `moves` keyed by `player`, `screens` keyed by
+/// `screener`, `defenses` keyed by `defender`.
+fn validate_action(action: &Action) -> Result<(), IRError> {
+    validate_unique("move", &action.moves, |m| m.span, |m| m.player.as_str())?;
+    validate_unique("screen", &action.screens, |s| s.span, |s| s.player.as_str())?;
+    validate_unique(
+        "defense",
+        &action.defenses,
+        |d| d.span,
+        |d| d.defender.as_str(),
+    )
+}
+
 impl IRGenerator {
     pub fn generate(playbook: Playbook) -> Result<Scene, IRError> {
         let mut entities = Vec::new();
@@ -147,6 +183,7 @@ impl IRGenerator {
         }
 
         for action in playbook.actions {
+            validate_action(&action)?;
             let phase_start_positions = current_positions.clone();
             let mut phase_end_positions = phase_start_positions.clone();
 
@@ -842,6 +879,197 @@ mod tests {
             }
             other => panic!("Expected MissingDefensePosition, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_duplicate_move_errors() {
+        // Two `move` entries for the same player in one `action` block must
+        // error, pointing at the duplicate (second) entry, instead of
+        // rendering two overlapping move lines from the same start position.
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            state: State {
+                positions,
+                ..Default::default()
+            },
+            actions: vec![Action {
+                moves: vec![
+                    MoveAction {
+                        player: "p1".to_string(),
+                        target: (0.0, 40.0),
+                        path_type: PathType::Straight,
+                        span: span_at(5, 13),
+                    },
+                    MoveAction {
+                        player: "p1".to_string(),
+                        target: (50.0, 0.0),
+                        path_type: PathType::Straight,
+                        span: span_at(6, 13),
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let result = IRGenerator::generate(playbook);
+        match result.unwrap_err() {
+            IRError::DuplicateAction(span, kind, name) => {
+                assert_eq!(kind, "move");
+                assert_eq!(name, "p1");
+                // The error points at the second entry.
+                assert_eq!((span.line, span.column), (6, 13));
+            }
+            other => panic!("Expected DuplicateAction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_duplicate_screen_and_defense_errors() {
+        // The same rule applies per kind: two `screen` entries by the same
+        // screener, and two `defense` entries for the same defender, must
+        // both fail with their own kind labels.
+        let make = |screens: Vec<ScreenAction>, defenses: Vec<DefenseAction>| Playbook {
+            players: vec!["p1".to_string()],
+            defenders: vec!["d1".to_string()],
+            state: State {
+                positions: {
+                    let mut positions = HashMap::new();
+                    positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+                    positions
+                },
+                defense: defense_at((0.0, -50.0), &["d1"]),
+                ..Default::default()
+            },
+            actions: vec![Action {
+                screens,
+                defenses,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let dup_screens = make(
+            vec![
+                ScreenAction {
+                    player: "p1".to_string(),
+                    target: ScreenTarget::Coordinate(25.0, 25.0),
+                    timing: Timing::None,
+                    path_type: PathType::Straight,
+                    span: dummy_span(),
+                },
+                ScreenAction {
+                    player: "p1".to_string(),
+                    target: ScreenTarget::Coordinate(50.0, 50.0),
+                    timing: Timing::None,
+                    path_type: PathType::Straight,
+                    span: span_at(7, 21),
+                },
+            ],
+            vec![],
+        );
+        match IRGenerator::generate(dup_screens).unwrap_err() {
+            IRError::DuplicateAction(span, kind, name) => {
+                assert_eq!(kind, "screen");
+                assert_eq!(name, "p1");
+                assert_eq!((span.line, span.column), (7, 21));
+            }
+            other => panic!("Expected DuplicateAction, got {:?}", other),
+        }
+
+        let dup_defenses = make(
+            vec![],
+            vec![
+                DefenseAction {
+                    defender: "d1".to_string(),
+                    target: DefenseTarget::Position(10.0, 0.0),
+                    span: dummy_span(),
+                },
+                DefenseAction {
+                    defender: "d1".to_string(),
+                    target: DefenseTarget::Position(20.0, 0.0),
+                    span: span_at(8, 5),
+                },
+            ],
+        );
+        match IRGenerator::generate(dup_defenses).unwrap_err() {
+            IRError::DuplicateAction(span, kind, name) => {
+                assert_eq!(kind, "defense");
+                assert_eq!(name, "d1");
+                assert_eq!((span.line, span.column), (8, 5));
+            }
+            other => panic!("Expected DuplicateAction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_same_id_in_separate_actions_is_not_a_duplicate() {
+        // The check is per action block: reusing the same player (and
+        // defender) across phases is the normal multi-action flow.
+        let mut positions = HashMap::new();
+        positions.insert("p1".to_string(), ((0.0, 0.0), dummy_span()));
+
+        let move_to = |target: (f64, f64)| MoveAction {
+            player: "p1".to_string(),
+            target,
+            path_type: PathType::Straight,
+            span: dummy_span(),
+        };
+        let defense = || DefenseAction {
+            defender: "d1".to_string(),
+            target: DefenseTarget::Mark {
+                player: "p1".to_string(),
+                offset: 0.0,
+                timing: Timing::None,
+            },
+            span: dummy_span(),
+        };
+
+        let playbook = Playbook {
+            players: vec!["p1".to_string()],
+            defenders: vec!["d1".to_string()],
+            state: State {
+                positions,
+                defense: defense_at((0.0, -50.0), &["d1"]),
+                ..Default::default()
+            },
+            actions: vec![
+                Action {
+                    moves: vec![move_to((0.0, 40.0))],
+                    defenses: vec![defense()],
+                    ..Default::default()
+                },
+                Action {
+                    moves: vec![move_to((0.0, 80.0))],
+                    defenses: vec![defense()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let scene = IRGenerator::generate(playbook).unwrap();
+        assert_eq!(
+            scene
+                .entities
+                .iter()
+                .find(|e| e.id == "p1")
+                .unwrap()
+                .end_pos,
+            (0.0, 80.0)
+        );
+    }
+
+    #[test]
+    fn test_duplicate_action_message() {
+        let err = IRError::DuplicateAction(dummy_span(), "move", "p1".to_string());
+        assert_eq!(
+            err.message(),
+            "Duplicate action 'move' for 'p1' in the same action block"
+        );
     }
 
     #[test]
