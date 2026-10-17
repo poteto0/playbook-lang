@@ -10,24 +10,39 @@ pub enum IRError {
     PlayerNotBaller(Span, String),
 }
 
-impl fmt::Display for IRError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl IRError {
+    /// The span of the source text that caused this error.
+    pub fn span(&self) -> &Span {
         match self {
-            IRError::UnexpectedPlayer(span, name) => {
-                write!(
-                    f,
-                    "Player '{}' not found at line {}, column {}",
-                    name, span.line, span.column
-                )
-            }
-            IRError::PlayerNotBaller(span, name) => {
-                write!(
-                    f,
-                    "Player '{}' does not have the ball at line {}, column {}",
-                    name, span.line, span.column
-                )
+            IRError::UnexpectedPlayer(span, _) | IRError::PlayerNotBaller(span, _) => span,
+        }
+    }
+
+    /// The canonical error message, without any positional suffix.
+    ///
+    /// This is the single source of truth for the wording; every output
+    /// destination (`Display`, `Renderer::format_ir_error`, the linter)
+    /// formats this text instead of duplicating it.
+    pub fn message(&self) -> String {
+        match self {
+            IRError::UnexpectedPlayer(_, name) => format!("Player '{}' not found in state", name),
+            IRError::PlayerNotBaller(_, name) => {
+                format!("Player '{}' does not have the ball", name)
             }
         }
+    }
+}
+
+impl fmt::Display for IRError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let span = self.span();
+        write!(
+            f,
+            "{} (line {}, column {})",
+            self.message(),
+            span.line,
+            span.column
+        )
     }
 }
 

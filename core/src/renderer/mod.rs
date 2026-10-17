@@ -34,20 +34,8 @@ fn format_parse_errors(errors: &[ParseError]) -> String {
 
 /// Format an IR generation error into the `[Error]:[...]` envelope.
 fn format_ir_error(e: &IRError) -> String {
-    let json = match e {
-        IRError::UnexpectedPlayer(span, name) => error_json(
-            span.line,
-            span.column,
-            span.len(),
-            &format!("Player '{}' not found in state", name),
-        ),
-        IRError::PlayerNotBaller(span, name) => error_json(
-            span.line,
-            span.column,
-            span.len(),
-            &format!("Player '{}' does not have the ball", name),
-        ),
-    };
+    let span = e.span();
+    let json = error_json(span.line, span.column, span.len(), &e.message());
     format!("[Error]:[{}]", json)
 }
 
