@@ -43,7 +43,7 @@ enum Commands {
 
 fn main() -> ExitCode {
     match run(Args::parse().command) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             eprintln!("{}", e);
             ExitCode::FAILURE
@@ -56,7 +56,7 @@ fn read_input(path: &Path) -> Result<String, String> {
         .map_err(|e| format!("{}: failed to read input file: {}", path.display(), e))
 }
 
-fn run(command: Commands) -> Result<(), String> {
+fn run(command: Commands) -> Result<ExitCode, String> {
     match command {
         Commands::Render { input, output } => {
             let svg = Renderer::new()
@@ -71,6 +71,7 @@ fn run(command: Commands) -> Result<(), String> {
                 )
             })?;
             println!("Successfully converted {:?} to {:?}", input, output_path);
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Fmt { input } => {
             let formatted = format_checked(&read_input(&input)?).map_err(|errors| {
@@ -81,19 +82,25 @@ fn run(command: Commands) -> Result<(), String> {
                     .join("\n")
             })?;
             print!("{}", formatted);
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Lint { input } => {
-            for output in &lint(&read_input(&input)?) {
+            let linter_outputs = lint(&read_input(&input)?);
+            for output in &linter_outputs {
                 println!("lint error [{}]: {}", output.severity, output.message);
                 println!("line: {}, column: {}", output.line, output.column);
             }
+            if !linter_outputs.is_empty() {
+                return Ok(ExitCode::FAILURE);
+            }
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Play { input } => {
             let json = Renderer::new()
                 .play(&read_input(&input)?)
                 .map_err(|e| format!("Compile Error:\n{}", e))?;
             println!("{}", json);
+            Ok(ExitCode::SUCCESS)
         }
     }
-    Ok(())
 }
