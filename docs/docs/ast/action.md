@@ -214,5 +214,5 @@ action = {
 }
 ```
 
-If a player should move again, place the next entries in a separate phase ([Multiple Action](./multiple_action.md)); each `action` block is checked independently, so the same player can move once per phase.
+The rule applies per action kind, so a player may combine different kinds in one block (e.g. a `move` and then a `pass`, where the pass reads the move's end position). If a player should perform the same kind of action again, place the next entries in a separate phase ([Multiple Action](./multiple_action.md)); each `action` block is checked independently, so the same player can move once per phase.
 
